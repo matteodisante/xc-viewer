@@ -6,18 +6,6 @@ FFVL contest archive (CFD). It shows single tracks with their flight phases
 thermals the pilots climbed: thermal planes over 5 km cells and regional thermal-time
 maps.
 
-> **Name.** This project was called *XC Thermal Viewer* (`xc-thermal-viewer`). It is now
-> *XC Viewer* (`xc-viewer`), because thermals are only one of the things it shows. If
-> you used the old name:
->
-> - the old GitHub address redirects here, but use
->   `https://github.com/matteodisante/xc-viewer` from now on;
-> - the command is now `xc-viewer`;
-> - the environment variables start with `XC_VIEWER_` instead of `XC_THERMAL_VIEWER_`
->   (for example `XC_VIEWER_DATA`);
-> - the viewer forgets the data folder and window size it remembered, once: choose the
->   data folder again at the next launch;
-> - the data folder itself needs no change, whatever its name.
 
 ## Project and development
 
