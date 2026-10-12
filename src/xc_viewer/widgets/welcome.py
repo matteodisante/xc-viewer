@@ -352,7 +352,7 @@ class WelcomeScreen(QWidget):
         self._timer.timeout.connect(self.update)
 
         self._eyebrow = self._label("FLIGHTS · THERMALS · COLLECTIVE MOTION", "#b0cfcb")
-        self._title = self._label("XC Thermal\nViewer", "#f3f4e9")
+        self._title = self._label("XC\nViewer", "#f3f4e9")
         self._subtitle = self._label(
             "Explore soaring flights, thermal climbs\n"
             "and the patterns that connect them.",
