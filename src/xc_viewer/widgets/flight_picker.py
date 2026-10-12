@@ -13,12 +13,18 @@ spelling of a site name.
 
 from __future__ import annotations
 
-import calendar
 import itertools
 from pathlib import Path
 
 import pandas as pd
-from PyQt6.QtCore import QAbstractTableModel, QModelIndex, Qt, QTimer, pyqtSignal
+from PyQt6.QtCore import (
+    QAbstractTableModel,
+    QLocale,
+    QModelIndex,
+    Qt,
+    QTimer,
+    pyqtSignal,
+)
 from PyQt6.QtGui import QKeySequence
 from PyQt6.QtWidgets import (
     QAbstractItemView,
@@ -43,6 +49,7 @@ from PyQt6.QtWidgets import (
 from .. import catalog_index, data, datafolder, geography
 from ..core.disciplines import DISCIPLINES, Discipline
 from ..core.naming import parse_igc_filename
+from .english import ENGLISH
 
 _RESULT_COLUMNS = [
     "flight_id",
@@ -198,7 +205,9 @@ class FlightPicker(QWidget):
         self._month_combo = QComboBox()
         self._month_combo.addItem("(any)", None)
         for month in range(1, 13):
-            self._month_combo.addItem(calendar.month_name[month], month)
+            self._month_combo.addItem(
+                ENGLISH.monthName(month, QLocale.FormatType.LongFormat), month
+            )
         # Not a searchable combo like _filter_combos: these aren't catalog columns
         # (distinct_values() has nothing to offer for them) but a fixed, small set of
         # boxes/bands computed from the pipeline's own lat0/lon0/alt0 -- see

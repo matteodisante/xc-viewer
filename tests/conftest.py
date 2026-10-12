@@ -43,12 +43,14 @@ def qapp():
     from PyQt6.QtGui import QFontDatabase
 
     from xc_viewer.app import configure_graphics
+    from xc_viewer.widgets.english import use_english
     from xc_viewer.widgets.theme import apply_theme
 
     app = qt_widgets.QApplication.instance()
     if app is None:
         configure_graphics()
         app = qt_widgets.QApplication([])
+        use_english()
         apply_theme(app)
     assert QFontDatabase.families(), (
         "Qt found no fonts; set QT_QPA_FONTDIR to a directory containing system fonts "

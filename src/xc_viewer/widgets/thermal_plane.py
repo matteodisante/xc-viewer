@@ -14,7 +14,9 @@ from matplotlib.backends.backend_qtagg import FigureCanvasQTAgg, NavigationToolb
 from matplotlib.figure import Figure
 from matplotlib.patches import Polygon
 from PyQt6.QtCore import QDate, QDateTime, Qt, QThread, QTime, QTimeZone, pyqtSignal
+from PyQt6.QtGui import QTextCharFormat
 from PyQt6.QtWidgets import (
+    QCalendarWidget,
     QComboBox,
     QDateEdit,
     QDateTimeEdit,
@@ -46,6 +48,7 @@ from ..thermal_store import (
     load_store,
     neighbour_frames,
 )
+from .english import ENGLISH
 from .flow_layout import ControlPanel, FlowLayout, labeled_control
 from .help import help_buttons
 
@@ -55,6 +58,29 @@ NEIGHBOURS_MISSING = (
 )
 # The only climb labels shown: the Vilpellet segmentation.
 SOURCE = "vilpellet"
+
+
+def _day_month_calendar() -> QCalendarWidget:
+    """A calendar for picking a day and month of no particular year.
+
+    The season fields carry the placeholder year 2000, so the year and the weekday
+    names would be made up: both are hidden.
+    """
+    calendar = QCalendarWidget()
+    calendar.setFirstDayOfWeek(Qt.DayOfWeek.Monday)
+    calendar.setHorizontalHeaderFormat(
+        QCalendarWidget.HorizontalHeaderFormat.NoHorizontalHeader
+    )
+    calendar.setVerticalHeaderFormat(
+        QCalendarWidget.VerticalHeaderFormat.NoVerticalHeader
+    )
+    for weekday in Qt.DayOfWeek:
+        calendar.setWeekdayTextFormat(weekday, QTextCharFormat())
+    for name in ("qt_calendar_yearbutton", "qt_calendar_yearedit"):
+        year = calendar.findChild(QWidget, name)
+        if year is not None:
+            year.hide()
+    return calendar
 
 
 def _read_backdrop(index, cell, kind):
@@ -255,15 +281,22 @@ class ThermalPlane(QWidget):
         self._season_start = QDateEdit(QDate(2000, 6, 1))
         self._season_end = QDateEdit(QDate(2000, 8, 31))
         for edit, tooltip in (
-            (self._season_start, "First included day of each year"),
+            (
+                self._season_start,
+                "First included day of each year. Type the day and month, or pick "
+                "it on the calendar",
+            ),
             (
                 self._season_end,
                 "Last included day of each year; an earlier date than the first "
-                "day continues into the next year",
+                "day continues into the next year. Type the day and month, or pick "
+                "it on the calendar",
             ),
         ):
             edit.setDateRange(QDate(2000, 1, 1), QDate(2000, 12, 31))
             edit.setDisplayFormat("dd MMM")
+            edit.setCalendarPopup(True)
+            edit.setCalendarWidget(_day_month_calendar())
             edit.setKeyboardTracking(False)
             edit.setToolTip(tooltip)
         self._first_year, self._last_year = QSpinBox(), QSpinBox()
@@ -1102,8 +1135,8 @@ class ThermalPlane(QWidget):
         hours = " to ".join(e.time().toString("HH:mm") for e in self._hours)
         if self._daily_date_mode.currentData() == "yearly":
             dates = (
-                f"{self._season_start.date().toString('dd MMM')} → "
-                f"{self._season_end.date().toString('dd MMM')} of each year "
+                f"{ENGLISH.toString(self._season_start.date(), 'dd MMM')} → "
+                f"{ENGLISH.toString(self._season_end.date(), 'dd MMM')} of each year "
                 f"{self._first_year.value()}-{self._last_year.value()}"
             )
         else:
