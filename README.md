@@ -1,9 +1,23 @@
-# XC Thermal Viewer
+# XC Viewer
 
 Interactive viewer of cross-country paraglider and hang-glider flights from the French
-FFVL contest archive (CFD), and of the thermals they climbed. It shows single tracks
-with their flight phases (Vilpellet segmentation), launch maps, thermal planes over
-5 km cells, regional thermal-time maps, route comparisons and group flights.
+FFVL contest archive (CFD). It shows single tracks with their flight phases
+(Vilpellet segmentation), launch maps, route comparisons and group flights, and the
+thermals the pilots climbed: thermal planes over 5 km cells and regional thermal-time
+maps.
+
+> **Name.** This project was called *XC Thermal Viewer* (`xc-thermal-viewer`). It is now
+> *XC Viewer* (`xc-viewer`), because thermals are only one of the things it shows. If
+> you used the old name:
+>
+> - the old GitHub address redirects here, but use
+>   `https://github.com/matteodisante/xc-viewer` from now on;
+> - the command is now `xc-viewer`;
+> - the environment variables start with `XC_VIEWER_` instead of `XC_THERMAL_VIEWER_`
+>   (for example `XC_VIEWER_DATA`);
+> - the viewer forgets the data folder and window size it remembered, once: choose the
+>   data folder again at the next launch;
+> - the data folder itself needs no change, whatever its name.
 
 ## Project and development
 
@@ -75,14 +89,14 @@ them and start quickly. `uv cache clean` deletes the viewer and its libraries;
 1. Launch the viewer (same command on every system):
 
    ```bash
-   uvx --from git+https://github.com/matteodisante/xc-thermal-viewer xc-thermal-viewer
+   uvx --from git+https://github.com/matteodisante/xc-viewer xc-viewer
    ```
 
 2. Click **Start exploring** on the welcome screen.
 
-3. On first launch a dialog asks for the data folder. Select the folder named
-   **`xc-thermal-viewer-data`** itself, the one holding `paragliders/` and
-   `hang_gliders/`, not one of its subfolders. The viewer remembers it, so later
+3. On first launch a dialog asks for the data folder. Select the folder that holds
+   `paragliders/` and `hang_gliders/` (called **`xc-viewer-data`** in this README), not
+   one of its subfolders. Its name does not matter. The viewer remembers it, so later
    launches open your data after **Start exploring**. To switch folders, click
    **Choose data folder…** at the top of the left panel.
 
@@ -90,15 +104,15 @@ You can also give the data folder on the command line; it is remembered the same
 
 ```bash
 # macOS and Linux
-uvx --from git+https://github.com/matteodisante/xc-thermal-viewer xc-thermal-viewer /path/to/xc-thermal-viewer-data
+uvx --from git+https://github.com/matteodisante/xc-viewer xc-viewer /path/to/xc-viewer-data
 ```
 
 ```bash
 # Windows (Git Bash)
-uvx --from git+https://github.com/matteodisante/xc-thermal-viewer xc-thermal-viewer D:/xc-thermal-viewer-data
+uvx --from git+https://github.com/matteodisante/xc-viewer xc-viewer D:/xc-viewer-data
 ```
 
-From a clone of this repository, `uv run xc-thermal-viewer` does the same.
+From a clone of this repository, `uv run xc-viewer` does the same.
 
 ### Updates
 
@@ -107,11 +121,11 @@ rebuilds only when the code has changed.
 
 ## The data folder
 
-The viewer reads everything from the `xc-thermal-viewer-data` folder, which is not
+The viewer reads everything from the data folder (`xc-viewer-data` here), which is not
 part of this repository. The folder holds one archive per discipline, either or both:
 
 ```text
-xc-thermal-viewer-data/
+xc-viewer-data/
 ├── manifest.json            what was packed, and when
 ├── paragliders/
 │   ├── raw/igc/<season>/    the .igc tracks
@@ -147,7 +161,7 @@ authors' code with their fitted parameters.
 [hang gliders](https://delta.ffvl.fr/cfd/liste). They are only in the data folder,
 not in this repository.
 
-**Included in this repository** (`src/xc_thermal_viewer/assets/`):
+**Included in this repository** (`src/xc_viewer/assets/`):
 
 - small terrain extracts from IGN RGE ALTI, the crest lines derived from them, and
   summit points from IGN BD TOPO: © IGN,
