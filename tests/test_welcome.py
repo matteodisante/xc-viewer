@@ -7,7 +7,7 @@ pytest.importorskip("PyQt6")
 from PyQt6.QtCore import Qt
 from PyQt6.QtTest import QSignalSpy, QTest
 
-from xc_thermal_viewer.widgets.welcome import WelcomeScreen
+from xc_viewer.widgets.welcome import WelcomeScreen
 
 
 @pytest.fixture

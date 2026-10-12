@@ -3,7 +3,7 @@
 import numpy as np
 import pytest
 
-from xc_thermal_viewer.thermal_ridges import clip_line, derive_ridges
+from xc_viewer.thermal_ridges import clip_line, derive_ridges
 
 
 @pytest.mark.parametrize("angle", [0, 30, 90])

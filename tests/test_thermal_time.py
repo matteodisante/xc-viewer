@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer.thermal_time import (
+from xc_viewer.thermal_time import (
     TimeGrid,
     duration_bins,
     load_grids,
@@ -66,11 +66,11 @@ def flat_earth(monkeypatch):
     """East becomes Lambert-93 x, so edges can be read off the fixes."""
     pytest.importorskip("pyproj")
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_time_prepare.enu_to_geodetic",
+        "xc_viewer.thermal_time_prepare.enu_to_geodetic",
         lambda e, n, z, f: (np.asarray(n), np.asarray(e)),
     )
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_time_prepare.project", lambda x, y: (x, y)
+        "xc_viewer.thermal_time_prepare.project", lambda x, y: (x, y)
     )
 
 
@@ -81,7 +81,7 @@ def _runs(rows):
 
 
 def test_climb_edges_stay_inside_runs_and_skip_gaps_and_flights(flat_earth):
-    from xc_thermal_viewer.thermal_time_prepare import climb_edges
+    from xc_viewer.thermal_time_prepare import climb_edges
 
     fixes = pd.DataFrame(
         {
@@ -116,8 +116,8 @@ def test_climb_edges_stay_inside_runs_and_skip_gaps_and_flights(flat_earth):
 
 
 def test_climb_edges_match_the_per_flight_census_definition(flat_earth):
-    from xc_thermal_viewer.thermal_geometry import continuous_edges
-    from xc_thermal_viewer.thermal_time_prepare import climb_edges
+    from xc_viewer.thermal_geometry import continuous_edges
+    from xc_viewer.thermal_time_prepare import climb_edges
 
     rng = np.random.default_rng(7)
     parts, runs = [], []
@@ -166,7 +166,7 @@ def test_climb_edges_match_the_per_flight_census_definition(flat_earth):
 
 
 def test_regions_are_cropped_without_changing_pixel_time():
-    from xc_thermal_viewer.thermal_time import TimeGrid
+    from xc_viewer.thermal_time import TimeGrid
 
     national = TimeGrid((0, 0, 1000, 1000))
     national.add([[10, 10], [510, 510]], [[90, 10], [590, 510]], [40, 60])

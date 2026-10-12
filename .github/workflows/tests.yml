@@ -47,12 +47,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: astral-sh/setup-uv@v5
       - name: Command-line entry point
-        run: uvx --python 3.12 --from . xc-thermal-viewer --help
+        run: uvx --python 3.12 --from . xc-viewer --help
       - name: Configs and assets ship inside the package
         run: >
           uv run --isolated --no-project --python 3.12 --with . python -c
-          "from xc_thermal_viewer.core.config import load_preproc_config;
-          from xc_thermal_viewer.core.vilpellet import load_vilpellet_config;
-          from xc_thermal_viewer.geography import load_basemap;
+          "from xc_viewer.core.config import load_preproc_config;
+          from xc_viewer.core.vilpellet import load_vilpellet_config;
+          from xc_viewer.geography import load_basemap;
           load_preproc_config(); load_vilpellet_config();
           assert load_basemap() is not None"

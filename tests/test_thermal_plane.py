@@ -9,9 +9,9 @@ import pytest
 pytest.importorskip("PyQt6")
 pytest.importorskip("pyproj")
 
-from xc_thermal_viewer.thermal_geometry import ThermalCell, project
-from xc_thermal_viewer.thermal_store import PlaneData
-from xc_thermal_viewer.widgets.thermal_plane import ThermalPlane
+from xc_viewer.thermal_geometry import ThermalCell, project
+from xc_viewer.thermal_store import PlaneData
+from xc_viewer.widgets.thermal_plane import ThermalPlane
 
 
 @pytest.fixture
@@ -253,7 +253,7 @@ def test_daily_date_range_uses_whole_paris_days_and_loads_on_request(
 ):
     from PyQt6.QtCore import QDate
 
-    from xc_thermal_viewer.thermal_daily import local_bounds
+    from xc_viewer.thermal_daily import local_bounds
 
     original = widget._utc_bounds()
     operations, reads = [], []
@@ -359,7 +359,7 @@ def test_twelve_category_ranks_clickable_labels_and_relief_do_not_change_points(
 
     import numpy as np
 
-    from xc_thermal_viewer.geography import TERRAIN_ORDER
+    from xc_viewer.geography import TERRAIN_ORDER
 
     old = widget._cells.currentData()
     cells = [
@@ -485,7 +485,7 @@ def test_same_dates_every_year_pool_only_the_season(widget, monkeypatch):
 
     from PyQt6.QtCore import QDate
 
-    from xc_thermal_viewer.thermal_daily import local_bounds
+    from xc_viewer.thermal_daily import local_bounds
 
     operations, reads = [], []
     monkeypatch.setattr(widget, "_run", lambda op, _: operations.append(op))
@@ -519,7 +519,7 @@ def test_same_dates_every_year_pool_only_the_season(widget, monkeypatch):
 
 
 def test_cell_flights_counts_every_visit_overlapping_the_paris_window(widget):
-    from xc_thermal_viewer.thermal_daily import local_bounds, wall_windows
+    from xc_viewer.thermal_daily import local_bounds, wall_windows
 
     day = datetime(2024, 6, 15).date()
 
@@ -542,7 +542,7 @@ def test_cell_flights_counts_every_visit_overlapping_the_paris_window(widget):
 def test_backdrops_are_cropped_to_the_view_at_screen_resolution():
     import numpy as np
 
-    from xc_thermal_viewer.widgets.thermal_plane import _visible_part
+    from xc_viewer.widgets.thermal_plane import _visible_part
 
     pixels = np.arange(64 * 64).reshape(64, 64)
     extent = (0, 8, 0, 8)  # 0.125 km per pixel

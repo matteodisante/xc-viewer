@@ -9,9 +9,9 @@ from types import SimpleNamespace
 import numpy as np
 import pytest
 
-from xc_thermal_viewer.sqlite import connect
-from xc_thermal_viewer.thermal_geometry import ThermalCell
-from xc_thermal_viewer.thermal_store import ThermalStore, load_store
+from xc_viewer.sqlite import connect
+from xc_viewer.thermal_geometry import ThermalCell
+from xc_viewer.thermal_store import ThermalStore, load_store
 
 
 @pytest.fixture
@@ -96,7 +96,7 @@ def store(tmp_path):
 
 
 def test_standalone_read_only_file_needs_no_archive_or_model(store, monkeypatch):
-    monkeypatch.setenv("XC_THERMAL_VIEWER_CACHE_DIR", str(store.path.parent))
+    monkeypatch.setenv("XC_VIEWER_CACHE_DIR", str(store.path.parent))
     before = store.path.stat().st_mtime_ns
     loaded = load_store()
     cell = loaded.cells()[0]
@@ -113,7 +113,7 @@ def test_standalone_read_only_file_needs_no_archive_or_model(store, monkeypatch)
 def test_climb_ranking_survives_loading_without_visitor_resort(store):
     from dataclasses import replace
 
-    from xc_thermal_viewer.thermal_ground import CLIMB_RANKING
+    from xc_viewer.thermal_ground import CLIMB_RANKING
 
     first = store.cells()[0]
     second = replace(first, ix=first.ix + 1, flights=1)
@@ -149,7 +149,7 @@ def test_climb_ranking_survives_loading_without_visitor_resort(store):
 def test_reuse_points_requires_unchanged_geometry_and_method(store, change):
     import shutil
 
-    from xc_thermal_viewer.thermal_daily import prepare_daily, reuse_prepared_points
+    from xc_viewer.thermal_daily import prepare_daily, reuse_prepared_points
 
     store.path.chmod(0o644)
     with connect(store.path) as db:
@@ -199,9 +199,9 @@ def test_reuse_points_requires_unchanged_geometry_and_method(store, change):
 
 
 def test_real_worker_auto_load_and_reload_button(qapp, store, monkeypatch):
-    from xc_thermal_viewer.widgets.thermal_plane import ThermalPlane
+    from xc_viewer.widgets.thermal_plane import ThermalPlane
 
-    monkeypatch.setenv("XC_THERMAL_VIEWER_CACHE_DIR", str(store.path.parent))
+    monkeypatch.setenv("XC_VIEWER_CACHE_DIR", str(store.path.parent))
     view = ThermalPlane()
 
     def drain():
@@ -265,7 +265,7 @@ def test_saved_relief_preserves_extent_and_never_uses_network(store, monkeypatch
 
 
 def test_prepared_points_read_without_geometry_and_resume(store, monkeypatch):
-    from xc_thermal_viewer.thermal_daily import prepare_daily
+    from xc_viewer.thermal_daily import prepare_daily
 
     store.path.chmod(0o644)
     prepare_daily(store.path, progress=lambda _: None)
@@ -277,7 +277,7 @@ def test_prepared_points_read_without_geometry_and_resume(store, monkeypatch):
     assert store.path.stat().st_size == before
     store.path.chmod(0o444)
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_geometry.plane_intersections",
+        "xc_viewer.thermal_geometry.plane_intersections",
         lambda *a, **k: pytest.fail("runtime intersection calculation"),
     )
     for source in ("vilpellet",):
@@ -330,7 +330,7 @@ def test_saved_aerial_dates_and_pixels(store, monkeypatch):
 def test_terrain_upgrade_rebuilds_points_and_resumes_without_changing_source(
     store, monkeypatch
 ):
-    from xc_thermal_viewer import thermal_daily, thermal_ground
+    from xc_viewer import thermal_daily, thermal_ground
 
     store.path.chmod(0o644)
     thermal_daily.prepare_daily(store.path, progress=lambda _: None)
@@ -415,14 +415,14 @@ def _neighbour_census(store, tmp_path, monkeypatch, products):
         )
         db.executemany("INSERT INTO climbs VALUES (?,?,?,?,?,?,?)", products)
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_index.load_saved_index", lambda **_: census
+        "xc_viewer.thermal_index.load_saved_index", lambda **_: census
     )
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_cache.segmentation_signature",
+        "xc_viewer.thermal_cache.segmentation_signature",
         lambda index, source: f"key-{source}",
     )
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_prepare.prepare_climbs", lambda *a, **k: None
+        "xc_viewer.thermal_prepare.prepare_climbs", lambda *a, **k: None
     )
     return cell
 
@@ -434,7 +434,7 @@ def _edges(*rows):
 
 
 def test_neighbours_lie_on_the_cell_planes_and_resume(store, tmp_path, monkeypatch):
-    from xc_thermal_viewer.thermal_neighbours import prepare_neighbour_points
+    from xc_viewer.thermal_neighbours import prepare_neighbour_points
 
     store.path.chmod(0o644)
     cell = store.cells()[0]
@@ -466,10 +466,10 @@ def test_neighbours_lie_on_the_cell_planes_and_resume(store, tmp_path, monkeypat
 
 
 def test_zoom_out_reads_only_the_ssd(qapp, store, tmp_path, monkeypatch):
-    from xc_thermal_viewer.thermal_neighbours import prepare_neighbour_points
-    from xc_thermal_viewer.widgets.thermal_plane import NEIGHBOURS_MISSING, ThermalPlane
+    from xc_viewer.thermal_neighbours import prepare_neighbour_points
+    from xc_viewer.widgets.thermal_plane import NEIGHBOURS_MISSING, ThermalPlane
 
-    monkeypatch.setenv("XC_THERMAL_VIEWER_CACHE_DIR", str(store.path.parent))
+    monkeypatch.setenv("XC_VIEWER_CACHE_DIR", str(store.path.parent))
     view = ThermalPlane()
 
     def drain():
@@ -504,7 +504,7 @@ def test_zoom_out_reads_only_the_ssd(qapp, store, tmp_path, monkeypatch):
         prepare_neighbour_points(store.path, progress=lambda _: None)
         store.path.chmod(0o444)
         monkeypatch.setattr(
-            "xc_thermal_viewer.thermal_index.load_saved_index",
+            "xc_viewer.thermal_index.load_saved_index",
             lambda **_: pytest.fail("census"),
         )
         monkeypatch.setattr(
@@ -593,6 +593,6 @@ def test_viewer_refuses_legacy_subset_instead_of_calling_it_the_terrain_top_thre
     store.path.chmod(0o644)
     with connect(store.path) as db:
         db.execute("DELETE FROM metadata WHERE key='ranking_reference'")
-    monkeypatch.setenv("XC_THERMAL_VIEWER_CACHE_DIR", str(store.path.parent))
+    monkeypatch.setenv("XC_VIEWER_CACHE_DIR", str(store.path.parent))
     with pytest.raises(ValueError, match="older version of the viewer"):
         load_store()

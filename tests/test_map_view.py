@@ -1,4 +1,4 @@
-"""Tests for xc_thermal_viewer.widgets.map_view.
+"""Tests for xc_viewer.widgets.map_view.
 
 Qt widget tests: need ``qapp`` (tests/viewer/conftest.py). ``Discipline.config()`` is
 monkeypatched the same way tests/viewer/test_catalog_index.py does.
@@ -10,10 +10,10 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer import catalog_index, geography
-from xc_thermal_viewer.core import disciplines as disciplines_mod
-from xc_thermal_viewer.core.disciplines import DataRoot
-from xc_thermal_viewer.widgets.map_view import MapView, _field, _tooltip_text
+from xc_viewer import catalog_index, geography
+from xc_viewer.core import disciplines as disciplines_mod
+from xc_viewer.core.disciplines import DataRoot
+from xc_viewer.widgets.map_view import MapView, _field, _tooltip_text
 
 # -- pure helpers: no Qt needed -----------------------------------------------
 

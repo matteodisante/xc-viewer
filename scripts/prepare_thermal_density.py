@@ -11,7 +11,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from xc_thermal_viewer.thermal_time_prepare import prepare  # noqa: E402
+from xc_viewer.thermal_time_prepare import prepare  # noqa: E402
 
 
 def main():
@@ -22,7 +22,7 @@ def main():
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
     if args.only == "routes":
-        from xc_thermal_viewer.route_density import prepare_density
+        from xc_viewer.route_density import prepare_density
 
         if args.limit_batches is not None:
             parser.error("--only routes requires a complete archive scan")

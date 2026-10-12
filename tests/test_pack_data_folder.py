@@ -11,13 +11,13 @@ import pyarrow as pa
 import pyarrow.parquet as pq
 import pytest
 
-from xc_thermal_viewer import route_index, thermal_index
-from xc_thermal_viewer.core.disciplines import (
+from xc_viewer import route_index, thermal_index
+from xc_viewer.core.disciplines import (
     DATA_FOLDER_ENV,
     HANG_GLIDERS,
     PARAGLIDERS,
 )
-from xc_thermal_viewer.sqlite import connect
+from xc_viewer.sqlite import connect
 
 SCRIPT = Path(__file__).resolve().parents[1] / "scripts/pack_data_folder.py"
 

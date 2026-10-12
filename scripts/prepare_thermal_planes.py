@@ -16,15 +16,15 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from xc_thermal_viewer.locking import BusyError, exclusive  # noqa: E402
-from xc_thermal_viewer.sqlite import connect  # noqa: E402
-from xc_thermal_viewer.thermal_index import build_index  # noqa: E402
+from xc_viewer.locking import BusyError, exclusive  # noqa: E402
+from xc_viewer.sqlite import connect  # noqa: E402
+from xc_viewer.thermal_index import build_index  # noqa: E402
 
 
 def _matches_prepared_selection(path, index):
     """Resume enrichment only for the exact same census, methods and DEM selection."""
-    from xc_thermal_viewer.thermal_cache import segmentation_signature
-    from xc_thermal_viewer.thermal_store import ThermalStore
+    from xc_viewer.thermal_cache import segmentation_signature
+    from xc_viewer.thermal_store import ThermalStore
 
     if not path.exists():
         return False
@@ -90,10 +90,10 @@ def main() -> int:
     try:
         index = build_index(force=args.rebuild_index, progress=progress)
         if not args.index_only:
-            from xc_thermal_viewer.thermal_activity import prepare_activity
-            from xc_thermal_viewer.thermal_prepare import prepare_climbs
-            from xc_thermal_viewer.thermal_ranking import audit_launches, rank_cells
-            from xc_thermal_viewer.thermal_store import (
+            from xc_viewer.thermal_activity import prepare_activity
+            from xc_viewer.thermal_prepare import prepare_climbs
+            from xc_viewer.thermal_ranking import audit_launches, rank_cells
+            from xc_viewer.thermal_store import (
                 STORE_NAME,
                 export_store,
                 neighbour_frames,
@@ -152,12 +152,12 @@ def main() -> int:
                         transfer.replace(staged)
                     else:
                         export_store(index, destination=staged)
-                from xc_thermal_viewer.thermal_daily import (
+                from xc_viewer.thermal_daily import (
                     prepare_daily,
                     prepare_reference_audit,
                     reuse_prepared_points,
                 )
-                from xc_thermal_viewer.thermal_imagery import (
+                from xc_viewer.thermal_imagery import (
                     prepare_imagery,
                     reuse_backgrounds,
                 )
@@ -168,7 +168,7 @@ def main() -> int:
                 prepare_daily(staged, progress=progress)
                 prepare_imagery(staged, progress=progress)
                 if args.with_neighbours:
-                    from xc_thermal_viewer.thermal_neighbours import (
+                    from xc_viewer.thermal_neighbours import (
                         prepare_neighbour_imagery,
                         prepare_neighbour_points,
                         prepare_neighbour_terrain,

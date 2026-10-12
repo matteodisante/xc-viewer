@@ -7,11 +7,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer import group_flights as gf
-from xc_thermal_viewer import route_index as ri
-from xc_thermal_viewer import route_scene as rs
-from xc_thermal_viewer.sqlite import connect
-from xc_thermal_viewer.thermal_index import CancelledError
+from xc_viewer import group_flights as gf
+from xc_viewer import route_index as ri
+from xc_viewer import route_scene as rs
+from xc_viewer.sqlite import connect
+from xc_viewer.thermal_index import CancelledError
 
 
 def catalog(minutes, *, cells=None, days=None):
@@ -253,7 +253,7 @@ def small_scene():
 
 
 def test_group_renderer_retains_order_selects_rows_and_has_only_departure_cell(qapp):
-    from xc_thermal_viewer.widgets.group_scene import GroupScene
+    from xc_viewer.widgets.group_scene import GroupScene
 
     view = GroupScene()
     try:
@@ -280,7 +280,7 @@ def test_group_tab_recomputes_definition_and_clears_stale_scene(qapp, monkeypatc
 
     from PyQt6.QtTest import QTest
 
-    from xc_thermal_viewer.widgets import group_flights as widget_module
+    from xc_viewer.widgets import group_flights as widget_module
 
     data = catalog([0, 20, 40, 60, 70])
     index = SimpleNamespace(disciplines=[SimpleNamespace(name="para")])

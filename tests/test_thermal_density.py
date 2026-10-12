@@ -11,11 +11,11 @@ from matplotlib.figure import Figure
 pytest.importorskip("PyQt6")
 pytest.importorskip("pyproj")
 
-from xc_thermal_viewer.density_maps import trim_cache, view_request
-from xc_thermal_viewer.density_view import AdaptiveDensity
-from xc_thermal_viewer.thermal_time import TimeGrid
-from xc_thermal_viewer.widgets.density_background import DensityBackgrounds
-from xc_thermal_viewer.widgets.thermal_density import ThermalDensity
+from xc_viewer.density_maps import trim_cache, view_request
+from xc_viewer.density_view import AdaptiveDensity
+from xc_viewer.thermal_time import TimeGrid
+from xc_viewer.widgets.density_background import DensityBackgrounds
+from xc_viewer.widgets.thermal_density import ThermalDensity
 
 
 def test_fractional_hours_are_visible_and_colour_scale_survives_zoom():
@@ -129,7 +129,7 @@ def test_disk_cache_has_a_size_limit_and_does_not_touch_siblings(tmp_path):
 def test_saved_cell_maps_are_reused_offline_with_exact_zoom_extent(
     monkeypatch, tmp_path
 ):
-    from xc_thermal_viewer.density_maps import fetch_background
+    from xc_viewer.density_maps import fetch_background
 
     (tmp_path / "thermal-planes.sqlite3").touch()
     pixels = np.ones((100, 100, 3), dtype=np.uint8) * 128
@@ -142,11 +142,11 @@ def test_saved_cell_maps_are_reused_offline_with_exact_zoom_extent(
         },
     )
     monkeypatch.setattr(
-        "xc_thermal_viewer.density_maps.ThermalStore",
+        "xc_viewer.density_maps.ThermalStore",
         lambda _: SimpleNamespace(background=lambda **kw: saved),
     )
     monkeypatch.setattr(
-        "xc_thermal_viewer.density_maps.fetch_image",
+        "xc_viewer.density_maps.fetch_image",
         lambda *a, **kw: pytest.fail("unexpected network request"),
     )
     request = ("topography", (1000, 2000, 2000, 3000), (20, 20))

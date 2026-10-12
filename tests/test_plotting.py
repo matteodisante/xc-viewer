@@ -1,4 +1,4 @@
-"""Smoke tests for xc_thermal_viewer.plotting (matplotlib only, no display needed)."""
+"""Smoke tests for xc_viewer.plotting (matplotlib only, no display needed)."""
 
 from __future__ import annotations
 
@@ -13,7 +13,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 
-from xc_thermal_viewer.plotting import (
+from xc_viewer.plotting import (
     PHASE_COLORS,
     center_message,
     make_axes,
@@ -227,7 +227,7 @@ def test_save_pdf_writes_a_vector_pdf(tmp_path):
 
 @pytest.mark.parametrize("is_3d", [False, True])
 def test_phase_colour_changes_cover_every_native_edge_without_crossing_gaps(is_3d):
-    from xc_thermal_viewer.data import phases_on_cleaned_fixes
+    from xc_viewer.data import phases_on_cleaned_fixes
 
     cleaned = pd.DataFrame(
         {

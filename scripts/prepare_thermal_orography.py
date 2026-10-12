@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlencode
 
-from xc_thermal_viewer.thermal_orography import (
+from xc_viewer.thermal_orography import (
     ATTRIBUTION,
     DATA_DIRECTORY,
     DATASET_URL,
@@ -18,7 +18,7 @@ from xc_thermal_viewer.thermal_orography import (
     select_cell_summits,
     validate_summits,
 )
-from xc_thermal_viewer.thermal_store import load_store
+from xc_viewer.thermal_store import load_store
 
 
 def main():

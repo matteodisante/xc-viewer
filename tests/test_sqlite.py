@@ -4,7 +4,7 @@ import sqlite3
 
 import pytest
 
-from xc_thermal_viewer.sqlite import connect
+from xc_viewer.sqlite import connect
 
 
 def test_the_connection_is_closed_and_committed_after_the_block(tmp_path):

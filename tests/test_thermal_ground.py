@@ -7,8 +7,8 @@ import numpy as np
 import pytest
 from PIL import Image
 
-from xc_thermal_viewer.thermal_geometry import ThermalCell
-from xc_thermal_viewer.thermal_ground import (
+from xc_viewer.thermal_geometry import ThermalCell
+from xc_viewer.thermal_ground import (
     mean_terrain,
     terrain_category,
     terrain_cell,

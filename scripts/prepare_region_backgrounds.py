@@ -14,8 +14,8 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from xc_thermal_viewer.thermal_imagery import prepare_region_backgrounds  # noqa: E402
-from xc_thermal_viewer.thermal_store import load_store  # noqa: E402
+from xc_viewer.thermal_imagery import prepare_region_backgrounds  # noqa: E402
+from xc_viewer.thermal_store import load_store  # noqa: E402
 
 
 def main() -> int:

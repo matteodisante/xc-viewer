@@ -6,9 +6,9 @@ import shutil
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer import datafolder, route_index, thermal_index
-from xc_thermal_viewer.core.disciplines import DATA_FOLDER_ENV, PARAGLIDERS
-from xc_thermal_viewer.fingerprint import SMALL_FILE_BYTES, file_identity
+from xc_viewer import datafolder, route_index, thermal_index
+from xc_viewer.core.disciplines import DATA_FOLDER_ENV, PARAGLIDERS
+from xc_viewer.fingerprint import SMALL_FILE_BYTES, file_identity
 
 
 @pytest.fixture(autouse=True)

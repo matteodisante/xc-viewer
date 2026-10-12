@@ -4,7 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from xc_thermal_viewer.thermal_orography import (
+from xc_viewer.thermal_orography import (
     load_summits,
     select_cell_summits,
     validate_summits,

@@ -13,10 +13,10 @@ import pyarrow.parquet as pq
 import pytest
 from PIL import Image
 
-from xc_thermal_viewer import route_index as ri
-from xc_thermal_viewer import route_scene as rs
-from xc_thermal_viewer.sqlite import connect
-from xc_thermal_viewer.thermal_index import CancelledError
+from xc_viewer import route_index as ri
+from xc_viewer import route_scene as rs
+from xc_viewer.sqlite import connect
+from xc_viewer.thermal_index import CancelledError
 
 
 @pytest.fixture
@@ -131,7 +131,7 @@ def test_resumes_census_after_cancellation_and_rejects_incomplete_archive(
 def test_scene_dates_match_retained_endpoints_after_trimming(
     archive, tmp_path, monkeypatch
 ):
-    from xc_thermal_viewer.core.naming import igc_path
+    from xc_viewer.core.naming import igc_path
 
     disc, root, _ = archive
     cfg = SimpleNamespace(
@@ -185,7 +185,7 @@ def test_scene_filters_all_departures_before_duration_sampling(
 ):
     from datetime import date, time
 
-    from xc_thermal_viewer.route_times import DepartureWindow
+    from xc_viewer.route_times import DepartureWindow
 
     disc, root, _ = archive
     ids = [str(i) for i in range(12)]
@@ -374,7 +374,7 @@ def test_aerial_cache_has_matching_bounds_north_up_pixels_and_integrity(
 
 
 def test_distance_presets_update_interval_and_choose_actual_pairs(qapp, monkeypatch):
-    from xc_thermal_viewer.widgets.route_comparison import RouteComparison
+    from xc_viewer.widgets.route_comparison import RouteComparison
 
     view = RouteComparison()
     calls = []
@@ -402,7 +402,7 @@ def test_distance_presets_update_interval_and_choose_actual_pairs(qapp, monkeypa
 
 def test_aerial_mesh_switch_preserves_geometry_camera_and_terrain_holes(qapp):
     pytest.importorskip("pyqtgraph.opengl")
-    from xc_thermal_viewer.widgets.route_comparison import RouteComparison
+    from xc_viewer.widgets.route_comparison import RouteComparison
 
     selected, total = ri.select_flights(cohort(12), (90, 650, 100, 650))
     bounds = (900000, 6500000, 1010000, 6510000)
@@ -466,7 +466,7 @@ def test_aerial_mesh_switch_preserves_geometry_camera_and_terrain_holes(qapp):
 
 def test_widget_speed_filters_keep_camera_and_clear_stale_scene(qapp):
     pytest.importorskip("pyqtgraph.opengl")
-    from xc_thermal_viewer.widgets.route_comparison import RouteComparison
+    from xc_viewer.widgets.route_comparison import RouteComparison
 
     selected, total = ri.select_flights(cohort(12), (90, 650, 100, 650))
     selected["departure_utc"] = pd.Timestamp("2024-06-15T21:59:55Z").timestamp()
@@ -543,8 +543,8 @@ def test_all_flight_density_preparation_preserves_gaps_and_detects_stale_sources
 ):
     import os
 
-    from xc_thermal_viewer import route_density as rd
-    from xc_thermal_viewer.thermal_time import load_grids
+    from xc_viewer import route_density as rd
+    from xc_viewer.thermal_time import load_grids
 
     disc, root, fixes = archive
     folder = _vilpellet_products(root, fixes)
@@ -574,7 +574,7 @@ def test_all_flight_density_preparation_preserves_gaps_and_detects_stale_sources
 
 
 def test_density_preparation_rejects_incomplete_vilpellet_coverage(archive, tmp_path):
-    from xc_thermal_viewer import route_density as rd
+    from xc_viewer import route_density as rd
 
     disc, root, fixes = archive
     folder = _vilpellet_products(root, fixes)
@@ -586,8 +586,8 @@ def test_density_preparation_rejects_incomplete_vilpellet_coverage(archive, tmp_
 
 
 def test_density_coarsening_conserves_time_and_geographic_footprint():
-    from xc_thermal_viewer.route_density import raster_window
-    from xc_thermal_viewer.thermal_time import TimeGrid
+    from xc_viewer.route_density import raster_window
+    from xc_viewer.thermal_time import TimeGrid
 
     grid = TimeGrid((0, 0, 1000, 1000))
     # The same thermal visited by two pilots contributes both residence times.
@@ -608,9 +608,9 @@ def test_density_coarsening_conserves_time_and_geographic_footprint():
 
 
 def test_thermal_colour_uses_one_dem_mesh_and_ignores_route_speed_filters(qapp):
-    from xc_thermal_viewer.route_density import DensityAtlas, raster_window
-    from xc_thermal_viewer.thermal_time import TimeGrid
-    from xc_thermal_viewer.widgets.route_comparison import RouteComparison
+    from xc_viewer.route_density import DensityAtlas, raster_window
+    from xc_viewer.thermal_time import TimeGrid
+    from xc_viewer.widgets.route_comparison import RouteComparison
 
     selected, total = ri.select_flights(cohort(12), (90, 650, 100, 650))
     bounds = (900000, 6500000, 1010000, 6510000)
@@ -675,7 +675,7 @@ def test_thermal_colour_uses_one_dem_mesh_and_ignores_route_speed_filters(qapp):
 
 
 @pytest.mark.skipif(
-    os.environ.get("XC_THERMAL_VIEWER_NATIVE_OPENGL") != "1",
+    os.environ.get("XC_VIEWER_NATIVE_OPENGL") != "1",
     reason="Requires a native display and GPU to check terrain/density compositing",
 )
 def test_native_thermal_colour_is_not_occluded_by_terrain(qapp):
@@ -683,8 +683,8 @@ def test_native_thermal_colour_is_not_occluded_by_terrain(qapp):
     from PyQt6.QtGui import QImage, QVector3D
     from PyQt6.QtTest import QTest
 
-    from xc_thermal_viewer.widgets.terrain_drape import DrapedTerrain
-    from xc_thermal_viewer.widgets.thermal_3d import TerrainView
+    from xc_viewer.widgets.terrain_drape import DrapedTerrain
+    from xc_viewer.widgets.thermal_3d import TerrainView
 
     view = TerrainView()
     view.resize(700, 500)
@@ -745,16 +745,16 @@ def test_native_thermal_colour_is_not_occluded_by_terrain(qapp):
 
 
 @pytest.mark.skipif(
-    os.environ.get("XC_THERMAL_VIEWER_NATIVE_OPENGL") != "1",
+    os.environ.get("XC_VIEWER_NATIVE_OPENGL") != "1",
     reason="Requires a native core-profile GPU to verify actual stroke widths",
 )
 def test_native_subpixel_strokes_and_endpoint_annotations(qapp):
     from PyQt6.QtGui import QImage
     from PyQt6.QtTest import QTest
 
-    from xc_thermal_viewer.widgets.route_annotations import RouteAnnotations
-    from xc_thermal_viewer.widgets.route_lines import RouteLine
-    from xc_thermal_viewer.widgets.thermal_3d import TerrainView
+    from xc_viewer.widgets.route_annotations import RouteAnnotations
+    from xc_viewer.widgets.route_lines import RouteLine
+    from xc_viewer.widgets.thermal_3d import TerrainView
 
     view = TerrainView()
     view.resize(700, 500)

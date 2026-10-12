@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from xc_thermal_viewer.core.disciplines import (
+from xc_viewer.core.disciplines import (
     DATA_FOLDER_ENV,
     HANG_GLIDERS,
     PARAGLIDERS,
@@ -32,7 +32,7 @@ def data_folder(tmp_path, monkeypatch):
 
 
 def test_every_tab_opens_and_a_track_loads(qapp, data_folder, monkeypatch):
-    from xc_thermal_viewer.main_window import MainWindow
+    from xc_viewer.main_window import MainWindow
 
     errors = []
     monkeypatch.setattr(sys, "excepthook", lambda *exc: errors.append(exc))

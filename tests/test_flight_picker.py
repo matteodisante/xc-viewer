@@ -1,4 +1,4 @@
-"""Tests for the discipline-selection logic in xc_thermal_viewer.widgets.flight_picker.
+"""Tests for the discipline-selection logic in xc_viewer.widgets.flight_picker.
 
 Qt widget tests: need ``qapp`` (tests/viewer/conftest.py). ``Discipline.config()`` is
 monkeypatched the same way tests/viewer/test_catalog_index.py does, pointing at
@@ -14,10 +14,10 @@ from pathlib import Path
 
 import pytest
 
-from xc_thermal_viewer import catalog_index
-from xc_thermal_viewer.core import disciplines as disciplines_mod
-from xc_thermal_viewer.core.disciplines import DataRoot
-from xc_thermal_viewer.widgets.flight_picker import FlightPicker
+from xc_viewer import catalog_index
+from xc_viewer.core import disciplines as disciplines_mod
+from xc_viewer.core.disciplines import DataRoot
+from xc_viewer.widgets.flight_picker import FlightPicker
 
 
 def _fake_config_for(root_by_name: dict):
@@ -47,10 +47,10 @@ def _clear_caches():
 
 @pytest.fixture(autouse=True)
 def _clear_env(monkeypatch):
-    # Discipline.config() reads XC_THERMAL_VIEWER_*_ROOT ahead of the data folder;
+    # Discipline.config() reads XC_VIEWER_*_ROOT ahead of the data folder;
     # isolate the tests from whatever this shell happens to have set.
-    monkeypatch.delenv("XC_THERMAL_VIEWER_PARA_ROOT", raising=False)
-    monkeypatch.delenv("XC_THERMAL_VIEWER_HANG_ROOT", raising=False)
+    monkeypatch.delenv("XC_VIEWER_PARA_ROOT", raising=False)
+    monkeypatch.delenv("XC_VIEWER_HANG_ROOT", raising=False)
     monkeypatch.delenv(disciplines_mod.DATA_FOLDER_ENV, raising=False)
 
 
@@ -101,7 +101,7 @@ def test_discipline_choice_shown_when_neither_reachable(qapp, monkeypatch):
 def test_refresh_after_a_new_data_folder_updates_selector_and_label(
     qapp, tmp_path, monkeypatch
 ):
-    from xc_thermal_viewer import datafolder
+    from xc_viewer import datafolder
 
     def folder_config(self):
         # A reduced stand-in for the real Discipline.config(): only the data folder,
@@ -120,7 +120,7 @@ def test_refresh_after_a_new_data_folder_updates_selector_and_label(
     assert picker._discipline_combo.isVisible() is True  # neither reachable yet
     assert picker._data_folder_label.text() == "No data folder chosen."
 
-    folder = tmp_path / "xc-thermal-viewer-data"
+    folder = tmp_path / "xc-viewer-data"
     _make_root(folder, "paragliders")
     monkeypatch.setenv(disciplines_mod.DATA_FOLDER_ENV, str(folder))
     picker.refresh_folders()
@@ -128,7 +128,7 @@ def test_refresh_after_a_new_data_folder_updates_selector_and_label(
     assert picker._discipline_combo.isVisible() is False
     assert picker._discipline_label.isVisible() is True
     assert picker.current_discipline().name == "paragliders"
-    assert picker._data_folder_label.text() == "Data folder: xc-thermal-viewer-data"
+    assert picker._data_folder_label.text() == "Data folder: xc-viewer-data"
     assert picker._data_folder_label.toolTip() == str(folder)
     # A sibling widget with its own cache (MapView) needs this to know the archive
     # roots just changed -- catalog_index's own cache being cleared isn't enough,

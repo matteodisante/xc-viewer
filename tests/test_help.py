@@ -8,10 +8,10 @@ import pytest
 pytest.importorskip("PyQt6")
 pytest.importorskip("pyproj")
 
-from xc_thermal_viewer.thermal_imagery import LAYERS
-from xc_thermal_viewer.thermal_ridges import LAYER
-from xc_thermal_viewer.widgets.help_text import TOPICS, body, page
-from xc_thermal_viewer.widgets.sources_methods import (
+from xc_viewer.thermal_imagery import LAYERS
+from xc_viewer.thermal_ridges import LAYER
+from xc_viewer.widgets.help_text import TOPICS, body, page
+from xc_viewer.widgets.sources_methods import (
     SECTIONS,
     SourcesMethods,
     sources_html,
@@ -85,14 +85,14 @@ def test_page_is_built_on_first_display(qapp):
 def test_each_screen_opens_and_reuses_its_info_and_how_to_use(qapp, topic):
     from PyQt6.QtWidgets import QDialog, QTextBrowser
 
-    from xc_thermal_viewer.widgets.group_flights import GroupFlights
-    from xc_thermal_viewer.widgets.map_view import MapView
-    from xc_thermal_viewer.widgets.plot_controls import PlotControls
-    from xc_thermal_viewer.widgets.route_comparison import RouteComparison
-    from xc_thermal_viewer.widgets.route_locator import RouteLocator
-    from xc_thermal_viewer.widgets.thermal_3d import Thermal3D
-    from xc_thermal_viewer.widgets.thermal_density import ThermalDensity
-    from xc_thermal_viewer.widgets.thermal_plane import ThermalPlane
+    from xc_viewer.widgets.group_flights import GroupFlights
+    from xc_viewer.widgets.map_view import MapView
+    from xc_viewer.widgets.plot_controls import PlotControls
+    from xc_viewer.widgets.route_comparison import RouteComparison
+    from xc_viewer.widgets.route_locator import RouteLocator
+    from xc_viewer.widgets.thermal_3d import Thermal3D
+    from xc_viewer.widgets.thermal_density import ThermalDensity
+    from xc_viewer.widgets.thermal_plane import ThermalPlane
 
     factories = {
         "trajectory": PlotControls,
@@ -135,10 +135,10 @@ def test_each_screen_opens_and_reuses_its_info_and_how_to_use(qapp, topic):
 def test_a_methods_link_opens_its_section_in_the_main_window(qapp, monkeypatch):
     from PyQt6.QtCore import QUrl
 
-    from xc_thermal_viewer.main_window import MainWindow
-    from xc_thermal_viewer.widgets.flight_picker import FlightPicker
-    from xc_thermal_viewer.widgets.help import HelpButton
-    from xc_thermal_viewer.widgets.info_browser import follow_link
+    from xc_viewer.main_window import MainWindow
+    from xc_viewer.widgets.flight_picker import FlightPicker
+    from xc_viewer.widgets.help import HelpButton
+    from xc_viewer.widgets.info_browser import follow_link
 
     monkeypatch.setattr(FlightPicker, "_repopulate_filter_combos", lambda self: None)
     window = MainWindow()

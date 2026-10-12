@@ -1,5 +1,5 @@
-"""Round-trip tests for xc_thermal_viewer.geodesy against the pipeline's own forward
-projection (xc_thermal_viewer.core.preproc.enu) -- the two must agree, since the inverse
+"""Round-trip tests for xc_viewer.geodesy against the pipeline's own forward
+projection (xc_viewer.core.preproc.enu) -- the two must agree, since the inverse
 is
 built from the same WGS84 constants and rotation.
 """
@@ -9,8 +9,8 @@ from __future__ import annotations
 import numpy as np
 import pytest
 
-from xc_thermal_viewer.core.preproc.enu import LocalFrame, geodetic_to_enu
-from xc_thermal_viewer.geodesy import enu_to_geodetic
+from xc_viewer.core.preproc.enu import LocalFrame, geodetic_to_enu
+from xc_viewer.geodesy import enu_to_geodetic
 
 LAT0, LON0, ALT0 = 45.0, 7.0, 1000.0
 FRAME = LocalFrame(lat0_deg=LAT0, lon0_deg=LON0, alt0_m=ALT0)
@@ -35,7 +35,7 @@ def test_points_across_a_flights_extent_round_trip_to_within_a_metre():
 
     east, north, _up = geodetic_to_enu(lat, lon, alt, LAT0, LON0, ALT0)
     # z is the trajectory's own vertical coordinate -- the same `alt` fed into the
-    # forward projection, exactly as xc_thermal_viewer.core.preproc.enu.to_local_frame
+    # forward projection, exactly as xc_viewer.core.preproc.enu.to_local_frame
     # uses
     # it (never the rotation's "up").
     lat_est, lon_est = enu_to_geodetic(east, north, alt, FRAME)

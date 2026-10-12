@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer.thermal_geometry import (
+from xc_viewer.thermal_geometry import (
     ThermalCell,
     cell_visits,
     climb_edges,

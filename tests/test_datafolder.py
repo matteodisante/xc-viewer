@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from xc_thermal_viewer import datafolder
-from xc_thermal_viewer.core.disciplines import (
+from xc_viewer import datafolder
+from xc_viewer.core.disciplines import (
     DATA_FOLDER_ENV,
     HANG_GLIDERS,
     PARAGLIDERS,
@@ -48,7 +48,7 @@ def test_no_folder_means_no_discipline_is_reachable():
 
 
 def test_startup_order_argument_environment_then_remembered(tmp_path, monkeypatch):
-    from xc_thermal_viewer.app import _initial_data_folder
+    from xc_viewer.app import _initial_data_folder
 
     good = tmp_path / "good"
     (good / "paragliders").mkdir(parents=True)
@@ -65,7 +65,7 @@ def test_startup_order_argument_environment_then_remembered(tmp_path, monkeypatc
 
 
 def test_a_stale_remembered_folder_asks_again(tmp_path, monkeypatch):
-    from xc_thermal_viewer import app
+    from xc_viewer import app
 
     asked = []
     monkeypatch.setattr(

@@ -4,13 +4,13 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer.route_scene import RouteScene
+from xc_viewer.route_scene import RouteScene
 
 
 @pytest.fixture(params=["routes", "groups"])
 def viewer(request, qapp):
-    from xc_thermal_viewer.widgets.group_scene import GroupScene
-    from xc_thermal_viewer.widgets.route_comparison import RouteComparison
+    from xc_viewer.widgets.group_scene import GroupScene
+    from xc_viewer.widgets.route_comparison import RouteComparison
 
     groups = request.param == "groups"
     view = GroupScene() if groups else RouteComparison()

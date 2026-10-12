@@ -15,9 +15,9 @@ def _run_startup(code, *, data_folder=None):
         "QT_QPA_PLATFORM": "offscreen",
         "PYTHONPATH": os.pathsep.join(sys.path),
     }
-    env.pop("XC_THERMAL_VIEWER_DATA", None)
+    env.pop("XC_VIEWER_DATA", None)
     if data_folder is not None:
-        env["XC_THERMAL_VIEWER_DATA"] = str(data_folder)
+        env["XC_VIEWER_DATA"] = str(data_folder)
     result = subprocess.run(
         [sys.executable, "-c", code],
         env=env,
@@ -36,9 +36,9 @@ from types import ModuleType
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import QCoreApplication, QTimer, Qt
 from PyQt6.QtGui import QSurfaceFormat
-from xc_thermal_viewer import app as entrypoint
-from xc_thermal_viewer.app import main
-from xc_thermal_viewer.widgets import welcome as welcome_module
+from xc_viewer import app as entrypoint
+from xc_viewer.app import main
+from xc_viewer.widgets import welcome as welcome_module
 
 import truststore
 
@@ -109,7 +109,7 @@ QtWidgets.QApplication = CheckedApplication
 QtCore.QSettings = Settings
 welcome_module.WelcomeScreen = CheckedWelcome
 entrypoint.choose_data_folder = unexpected_picker
-module = ModuleType("xc_thermal_viewer.main_window")
+module = ModuleType("xc_viewer.main_window")
 module.MainWindow = Window
 sys.modules[module.__name__] = module
 assert main() == 0
@@ -126,8 +126,8 @@ import sys
 from types import ModuleType
 from PyQt6 import QtCore, QtWidgets
 from PyQt6.QtCore import QTimer
-from xc_thermal_viewer import app as entrypoint
-from xc_thermal_viewer.widgets import welcome as welcome_module
+from xc_viewer import app as entrypoint
+from xc_viewer.widgets import welcome as welcome_module
 
 events = []
 
@@ -163,7 +163,7 @@ def picker(*args, **kwargs):
 QtCore.QSettings = Settings
 welcome_module.WelcomeScreen = CheckedWelcome
 entrypoint.choose_data_folder = picker
-module = ModuleType("xc_thermal_viewer.main_window")
+module = ModuleType("xc_viewer.main_window")
 module.MainWindow = Window
 sys.modules[module.__name__] = module
 assert entrypoint.main() == 0
@@ -180,8 +180,8 @@ import sys
 from types import ModuleType
 from PyQt6.QtCore import QRect, QTimer, Qt
 from PyQt6.QtWidgets import QWidget
-from xc_thermal_viewer.app import main
-from xc_thermal_viewer.widgets import welcome as welcome_module
+from xc_viewer.app import main
+from xc_viewer.widgets import welcome as welcome_module
 
 mode = MODE
 expected = {}
@@ -236,7 +236,7 @@ class Window(QWidget):
         self.close()
 
 welcome_module.WelcomeScreen = CheckedWelcome
-module = ModuleType("xc_thermal_viewer.main_window")
+module = ModuleType("xc_viewer.main_window")
 module.MainWindow = Window
 sys.modules[module.__name__] = module
 assert main([]) == 0

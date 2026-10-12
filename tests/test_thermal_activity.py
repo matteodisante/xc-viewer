@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer.thermal_activity import edge_run_cells, flight_activity
+from xc_viewer.thermal_activity import edge_run_cells, flight_activity
 
 
 def test_one_episode_counts_once_per_cell_and_distinct_episodes_accumulate():
@@ -26,11 +26,11 @@ def test_between_fix_cells_count_but_terminal_and_corner_contacts_do_not():
 
 def test_saved_runs_must_match_native_fixes_and_gaps_split_runs(monkeypatch):
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_activity.enu_to_geodetic",
+        "xc_viewer.thermal_activity.enu_to_geodetic",
         lambda e, n, z, origin: (n.to_numpy(), e.to_numpy()),
     )
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_activity.project", lambda lon, lat: (lon, lat)
+        "xc_viewer.thermal_activity.project", lambda lon, lat: (lon, lat)
     )
     fixes = pd.DataFrame(
         {

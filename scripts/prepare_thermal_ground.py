@@ -4,9 +4,9 @@
 import argparse
 from pathlib import Path
 
-from xc_thermal_viewer.locking import exclusive
-from xc_thermal_viewer.thermal_ground import upgrade_terrain_store
-from xc_thermal_viewer.thermal_store import find_store_path
+from xc_viewer.locking import exclusive
+from xc_viewer.thermal_ground import upgrade_terrain_store
+from xc_viewer.thermal_store import find_store_path
 
 
 def main():

@@ -2,7 +2,7 @@
 
 import pytest
 
-from xc_thermal_viewer.locking import exclusive
+from xc_viewer.locking import exclusive
 
 
 def test_a_held_product_lock_refuses_a_second_writer(tmp_path):

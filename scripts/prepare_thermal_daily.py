@@ -4,10 +4,10 @@
 import argparse
 from pathlib import Path
 
-from xc_thermal_viewer.locking import exclusive
-from xc_thermal_viewer.thermal_daily import prepare_daily, prepare_reference_audit
-from xc_thermal_viewer.thermal_imagery import prepare_imagery
-from xc_thermal_viewer.thermal_store import load_store
+from xc_viewer.locking import exclusive
+from xc_viewer.thermal_daily import prepare_daily, prepare_reference_audit
+from xc_viewer.thermal_imagery import prepare_imagery
+from xc_viewer.thermal_store import load_store
 
 
 def main():

@@ -10,10 +10,10 @@ import pytest
 
 pytest.importorskip("pyqtgraph.opengl")
 
-from xc_thermal_viewer.thermal_3d import TerrainScene
-from xc_thermal_viewer.thermal_geometry import ThermalCell
-from xc_thermal_viewer.widgets.thermal_3d import Thermal3D
-from xc_thermal_viewer.widgets.thermal_plane import ThermalPlane
+from xc_viewer.thermal_3d import TerrainScene
+from xc_viewer.thermal_geometry import ThermalCell
+from xc_viewer.widgets.thermal_3d import Thermal3D
+from xc_viewer.widgets.thermal_plane import ThermalPlane
 
 
 @pytest.fixture
@@ -119,7 +119,7 @@ def test_area_selector_reloads_same_dates_and_frames_the_complete_area(
             scene, x=np.array([-half, half]), y=np.array([-half, half]), area_km=area_km
         )
 
-    monkeypatch.setattr("xc_thermal_viewer.widgets.thermal_3d.load_scene", load)
+    monkeypatch.setattr("xc_viewer.widgets.thermal_3d.load_scene", load)
     view = Thermal3D()
     try:
         assert not view._area.isEnabled()
@@ -170,7 +170,7 @@ def test_button_captures_selected_cell_and_dates_and_reuses_window(
         def close(self):
             pass
 
-    monkeypatch.setattr("xc_thermal_viewer.widgets.thermal_3d.Thermal3D", Window)
+    monkeypatch.setattr("xc_viewer.widgets.thermal_3d.Thermal3D", Window)
     view = ThermalPlane()
     try:
         assert not view._terrain_3d.isEnabled()
@@ -200,7 +200,7 @@ def test_button_captures_selected_cell_and_dates_and_reuses_window(
 
 
 @pytest.mark.skipif(
-    os.environ.get("XC_THERMAL_VIEWER_NATIVE_OPENGL") != "1",
+    os.environ.get("XC_VIEWER_NATIVE_OPENGL") != "1",
     reason="Requires a native display and GPU; offscreen Qt cannot test compositing",
 )
 def test_visible_dialog_shares_context_and_keeps_rendering(qapp, scene, monkeypatch):
@@ -208,8 +208,8 @@ def test_visible_dialog_shares_context_and_keeps_rendering(qapp, scene, monkeypa
     from PyQt6.QtGui import QImage, QOpenGLContext
     from PyQt6.QtTest import QTest
 
-    from xc_thermal_viewer.main_window import MainWindow
-    from xc_thermal_viewer.widgets.flight_picker import FlightPicker
+    from xc_viewer.main_window import MainWindow
+    from xc_viewer.widgets.flight_picker import FlightPicker
 
     monkeypatch.setattr(FlightPicker, "_repopulate_filter_combos", lambda _: None)
     window = MainWindow()
@@ -252,7 +252,7 @@ def test_visible_dialog_shares_context_and_keeps_rendering(qapp, scene, monkeypa
 
 
 @pytest.mark.skipif(
-    os.environ.get("XC_THERMAL_VIEWER_NATIVE_OPENGL") != "1",
+    os.environ.get("XC_VIEWER_NATIVE_OPENGL") != "1",
     reason="Requires a native display and GPU",
 )
 def test_native_orthophoto_orientation_and_texture_lifecycle(qapp, scene):
@@ -308,7 +308,7 @@ def test_native_orthophoto_orientation_and_texture_lifecycle(qapp, scene):
 
 
 @pytest.mark.skipif(
-    os.environ.get("XC_THERMAL_VIEWER_NATIVE_OPENGL") != "1",
+    os.environ.get("XC_VIEWER_NATIVE_OPENGL") != "1",
     reason="Requires a native display and GPU",
 )
 def test_native_orthophoto_keeps_xy_coordinates_on_slopes(qapp, scene):

@@ -8,9 +8,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer.thermal_explorer import ThermalExplorer
-from xc_thermal_viewer.thermal_geometry import ThermalCell, plane_intersections
-from xc_thermal_viewer.thermal_store import EDGE_COLUMNS, CancelledError
+from xc_viewer.thermal_explorer import ThermalExplorer
+from xc_viewer.thermal_geometry import ThermalCell, plane_intersections
+from xc_viewer.thermal_store import EDGE_COLUMNS, CancelledError
 
 
 def test_exploration_decodes_whole_flight_before_clipping_and_reuses_cache(
@@ -45,7 +45,7 @@ def test_exploration_decodes_whole_flight_before_clipping_and_reuses_cache(
     explorer._census = index
     explorer._extras[0, 0] = (cell, {"mean_m": 100})
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_cache.segmentation_signature", lambda *a: "current"
+        "xc_viewer.thermal_cache.segmentation_signature", lambda *a: "current"
     )
     fixes = pd.DataFrame({"t": [0, 50, 100]})
     calls = []
@@ -75,8 +75,8 @@ def test_exploration_decodes_whole_flight_before_clipping_and_reuses_cache(
             for key, c in sources["vilpellet"]
         ]
 
-    monkeypatch.setattr("xc_thermal_viewer.thermal_explorer._flight_fixes", frames)
-    monkeypatch.setattr("xc_thermal_viewer.thermal_prepare._decode", decode)
+    monkeypatch.setattr("xc_viewer.thermal_explorer._flight_fixes", frames)
+    monkeypatch.setattr("xc_viewer.thermal_prepare._decode", decode)
     first = explorer.read_plane(cell, 149, 151, "vilpellet")
     assert calls == [[0, 50, 100]]
     assert first.selected == 1 and first.unknown_clock == 1 and first.cached == 0
@@ -98,7 +98,7 @@ def test_redraw_never_downloads_missing_neighbour_background(tmp_path, monkeypat
     cell = ThermalCell(0, 0, "Neighbour", 0, 0, 100, 100)
     explorer._extras[0, 0] = (cell, {})
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_explorer.fetch_image",
+        "xc_viewer.thermal_explorer.fetch_image",
         lambda *a: pytest.fail("network during redraw"),
     )
     assert explorer.needs_background(cell, "topography")

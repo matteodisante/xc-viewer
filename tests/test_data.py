@@ -1,4 +1,4 @@
-"""Tests for xc_thermal_viewer.data (Qt-free logic layer)."""
+"""Tests for xc_viewer.data (Qt-free logic layer)."""
 
 from __future__ import annotations
 
@@ -8,14 +8,14 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer import data as viewer_data
-from xc_thermal_viewer.core import disciplines as disciplines_mod
-from xc_thermal_viewer.core.config import load_preproc_config
-from xc_thermal_viewer.core.disciplines import DataRoot
-from xc_thermal_viewer.core.preproc.altchannel import adopt_alt_channel
-from xc_thermal_viewer.core.preproc.enu import LocalFrame
-from xc_thermal_viewer.core.preproc.pipeline import run_flight
-from xc_thermal_viewer.data import (
+from xc_viewer import data as viewer_data
+from xc_viewer.core import disciplines as disciplines_mod
+from xc_viewer.core.config import load_preproc_config
+from xc_viewer.core.disciplines import DataRoot
+from xc_viewer.core.preproc.altchannel import adopt_alt_channel
+from xc_viewer.core.preproc.enu import LocalFrame
+from xc_viewer.core.preproc.pipeline import run_flight
+from xc_viewer.data import (
     RawTrack,
     cleaned_to_geographic,
     format_dms,
@@ -146,7 +146,7 @@ def test_cleaned_to_geographic_lands_back_on_the_original_geography():
     assert {"lat", "lon", "alt", "segment_id"} <= set(geographic.columns)
     # The trajectory's own first fix is the frame's origin (E = N = 0): its recovered
     # (lat, lon) must be the origin's, to a small fraction of the pipeline's own
-    # projection error (centimetres at flight scale, see xc_thermal_viewer.geodesy).
+    # projection error (centimetres at flight scale, see xc_viewer.geodesy).
     assert geographic["lat"].iloc[0] == pytest.approx(frame.lat0_deg, abs=1e-6)
     assert geographic["lon"].iloc[0] == pytest.approx(frame.lon0_deg, abs=1e-6)
     # A point away from the origin must move away in (lat, lon) too, in the direction
@@ -168,7 +168,7 @@ def test_raw_only_frame_falls_back_when_the_pipeline_never_got_that_far():
     raw = load_raw(FIXTURE, CFG)
     frame = raw_only_frame(raw)
     assert frame is not None
-    # Its own first fix, per xc_thermal_viewer.core.preproc.enu.to_local_frame.
+    # Its own first fix, per xc_viewer.core.preproc.enu.to_local_frame.
     assert frame.lat0_deg == pytest.approx(raw.fixes["lat"].iloc[0])
     assert frame.lon0_deg == pytest.approx(raw.fixes["lon"].iloc[0])
 

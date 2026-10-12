@@ -6,7 +6,7 @@ from urllib.parse import parse_qs, urlparse
 
 from PIL import Image
 
-from xc_thermal_viewer import thermal_imagery
+from xc_viewer import thermal_imagery
 
 
 def test_topography_retries_truncated_response_and_caches_valid_png(

@@ -1,7 +1,7 @@
 """Ground quality screening must not manufacture a new launch altitude."""
 
-from xc_thermal_viewer.sqlite import connect
-from xc_thermal_viewer.thermal_ranking import launch_quality
+from xc_viewer.sqlite import connect
+from xc_viewer.thermal_ranking import launch_quality
 
 
 def _records(path, altitudes, valid="A"):
@@ -34,9 +34,9 @@ def test_dem_ranking_includes_cells_without_starts_and_stops_after_all_bands(
     tmp_path, monkeypatch
 ):
 
-    from xc_thermal_viewer.thermal_ground import TERRAIN_RANKING
-    from xc_thermal_viewer.thermal_index import ThermalIndex, _create_tables
-    from xc_thermal_viewer.thermal_ranking import rank_cells
+    from xc_viewer.thermal_ground import TERRAIN_RANKING
+    from xc_viewer.thermal_index import ThermalIndex, _create_tables
+    from xc_viewer.thermal_ranking import rank_cells
 
     path = tmp_path / "census.sqlite3"
     with connect(path) as db:
@@ -62,7 +62,7 @@ def test_dem_ranking_includes_cells_without_starts_and_stops_after_all_bands(
         fetched.append(cell.ix)
         return {"minimum_m": highest[cell.ix] - 100, "maximum_m": highest[cell.ix]}
 
-    monkeypatch.setattr("xc_thermal_viewer.thermal_ranking._cell_terrain", terrain)
+    monkeypatch.setattr("xc_viewer.thermal_ranking._cell_terrain", terrain)
     index = ThermalIndex(path, ("paragliders",))
     ranked = rank_cells(index, per_category=1)
     assert fetched == [0, 1, 2, 3, 4]  # lower-population sixth cell is unnecessary
@@ -84,9 +84,9 @@ def test_dem_ranking_includes_cells_without_starts_and_stops_after_all_bands(
 
 def test_vilpellet_runs_determine_ranking_instead_of_visitors(tmp_path, monkeypatch):
 
-    from xc_thermal_viewer.thermal_ground import CLIMB_RANKING
-    from xc_thermal_viewer.thermal_index import ThermalIndex, _create_tables
-    from xc_thermal_viewer.thermal_ranking import rank_cells
+    from xc_viewer.thermal_ground import CLIMB_RANKING
+    from xc_viewer.thermal_index import ThermalIndex, _create_tables
+    from xc_viewer.thermal_ranking import rank_cells
 
     path, activity = tmp_path / "census.sqlite3", tmp_path / "activity.sqlite3"
     with connect(path) as db:
@@ -117,7 +117,7 @@ def test_vilpellet_runs_determine_ranking_instead_of_visitors(tmp_path, monkeypa
         examined.append(cell.ix)
         return {"minimum_m": 0, "maximum_m": highest[cell.ix]}
 
-    monkeypatch.setattr("xc_thermal_viewer.thermal_ranking._cell_terrain", terrain)
+    monkeypatch.setattr("xc_viewer.thermal_ranking._cell_terrain", terrain)
     ranked = rank_cells(
         ThermalIndex(path, ("paragliders",)), activity=activity, per_category=1
     )
@@ -134,9 +134,9 @@ def test_cell_beyond_dem_coverage_is_skipped_but_other_terrain_errors_abort(
 
     import pytest
 
-    from xc_thermal_viewer.thermal_ground import IncompleteTerrainError
-    from xc_thermal_viewer.thermal_index import ThermalIndex, _create_tables
-    from xc_thermal_viewer.thermal_ranking import rank_cells
+    from xc_viewer.thermal_ground import IncompleteTerrainError
+    from xc_viewer.thermal_index import ThermalIndex, _create_tables
+    from xc_viewer.thermal_ranking import rank_cells
 
     path = tmp_path / "census.sqlite3"
     with connect(path) as db:
@@ -156,7 +156,7 @@ def test_cell_beyond_dem_coverage_is_skipped_but_other_terrain_errors_abort(
             raise IncompleteTerrainError("Missing or invalid terrain elevations")
         return {"minimum_m": 0, "maximum_m": highest[cell.ix]}
 
-    monkeypatch.setattr("xc_thermal_viewer.thermal_ranking._cell_terrain", terrain)
+    monkeypatch.setattr("xc_viewer.thermal_ranking._cell_terrain", terrain)
     index = ThermalIndex(path, ("paragliders",))
     ranked = rank_cells(index, per_category=1)
     assert [c.ix for c in ranked.cells()] == [1, 2, 3, 4]
@@ -166,6 +166,6 @@ def test_cell_beyond_dem_coverage_is_skipped_but_other_terrain_errors_abort(
     def tampered(cell, index):
         raise ValueError("Terrain raster hash differs from its provenance")
 
-    monkeypatch.setattr("xc_thermal_viewer.thermal_ranking._cell_terrain", tampered)
+    monkeypatch.setattr("xc_viewer.thermal_ranking._cell_terrain", tampered)
     with pytest.raises(ValueError, match="hash"):
         rank_cells(index, per_category=1)

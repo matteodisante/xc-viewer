@@ -16,7 +16,7 @@ from PyQt6.QtGui import (
     QWheelEvent,
 )
 
-from xc_thermal_viewer.widgets.thermal_3d import TerrainView
+from xc_viewer.widgets.thermal_3d import TerrainView
 
 
 @pytest.fixture

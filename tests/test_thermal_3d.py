@@ -11,7 +11,7 @@ import pandas as pd
 import pytest
 from PIL import Image
 
-from xc_thermal_viewer.thermal_3d import (
+from xc_viewer.thermal_3d import (
     cell_label,
     load_scene,
     points_every_20m,
@@ -21,9 +21,9 @@ from xc_thermal_viewer.thermal_3d import (
     read_neighbour_points,
     read_surface,
 )
-from xc_thermal_viewer.thermal_geometry import ThermalCell
-from xc_thermal_viewer.thermal_ground import terrain_reference
-from xc_thermal_viewer.thermal_store import CancelledError, PlaneData, neighbour_frames
+from xc_viewer.thermal_geometry import ThermalCell
+from xc_viewer.thermal_ground import terrain_reference
+from xc_viewer.thermal_store import CancelledError, PlaneData, neighbour_frames
 
 
 @pytest.fixture
@@ -163,7 +163,7 @@ def test_scene_reads_selected_cell_vilpellet_and_requested_dates(
         background=lambda *_: None,
     )
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_3d.read_surface",
+        "xc_viewer.thermal_3d.read_surface",
         lambda *args: (np.arange(2), np.arange(2), np.ones((2, 2)), {}),
     )
     scene = load_scene(store, cell, 100, 200)
@@ -304,8 +304,8 @@ def test_10km_cloud_uses_central_planes_filters_dates_and_counts_unique_flights(
     def surface(*_):
         return np.arange(2), np.arange(2), np.ones((2, 2)), {}
 
-    monkeypatch.setattr("xc_thermal_viewer.thermal_3d.read_area_surface", surface)
-    monkeypatch.setattr("xc_thermal_viewer.thermal_3d.read_surface", surface)
+    monkeypatch.setattr("xc_viewer.thermal_3d.read_area_surface", surface)
+    monkeypatch.setattr("xc_viewer.thermal_3d.read_surface", surface)
     scene = load_scene(store, cell, 100, 200, area_km=10)
     assert levels == [0, 2]  # An irregular 35 m ceiling is not a 20 m plane.
     assert scene.area_km == 10 and len(scene.points) == 6

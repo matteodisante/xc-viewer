@@ -12,8 +12,8 @@ from urllib.parse import urlencode
 import numpy as np
 from PIL import Image
 
-from xc_thermal_viewer.thermal_geometry import ThermalCell
-from xc_thermal_viewer.thermal_ridges import (
+from xc_viewer.thermal_geometry import ThermalCell
+from xc_viewer.thermal_ridges import (
     ATTRIBUTION,
     DATA_DIRECTORY,
     DATASET_URL,
@@ -23,7 +23,7 @@ from xc_thermal_viewer.thermal_ridges import (
     derive_ridges,
     load_ridges,
 )
-from xc_thermal_viewer.thermal_store import _connect, find_store_path
+from xc_viewer.thermal_store import _connect, find_store_path
 
 
 def main():

@@ -3,7 +3,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [project]
-name = "xc-thermal-viewer"
+name = "xc-viewer"
 version = "0.1.0"
 description = "Interactive viewer of cross-country paraglider and hang-glider flights and their thermals."
 readme = "README.md"
@@ -29,10 +29,10 @@ dependencies = [
 ]
 
 [project.scripts]
-xc-thermal-viewer = "xc_thermal_viewer.app:main"
+xc-viewer = "xc_viewer.app:main"
 
 [project.urls]
-Repository = "https://github.com/matteodisante/xc-thermal-viewer"
+Repository = "https://github.com/matteodisante/xc-viewer"
 
 [dependency-groups]
 dev = [
@@ -41,7 +41,7 @@ dev = [
 ]
 
 [tool.hatch.build.targets.wheel]
-packages = ["src/xc_thermal_viewer"]
+packages = ["src/xc_viewer"]
 
 [tool.ruff]
 line-length = 88

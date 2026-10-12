@@ -7,8 +7,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer.main_window import MainWindow
-from xc_thermal_viewer.widgets.flight_picker import FlightPicker
+from xc_viewer.main_window import MainWindow
+from xc_viewer.widgets.flight_picker import FlightPicker
 
 
 @pytest.fixture
@@ -176,7 +176,7 @@ def test_all_tabs_resize_and_keep_controls_inside_window(
     from PyQt6.QtCore import QPoint, QRect, QSize
     from PyQt6.QtWidgets import QLayout
 
-    from xc_thermal_viewer.widgets.flow_layout import FlowLayout
+    from xc_viewer.widgets.flow_layout import FlowLayout
 
     for view in (
         window._map_view,
@@ -214,10 +214,10 @@ def test_all_tabs_resize_and_keep_controls_inside_window(
 def test_data_folder_button_switches_and_remembers_the_folder(
     window, tmp_path, monkeypatch
 ):
-    from xc_thermal_viewer import app, datafolder
-    from xc_thermal_viewer.core.disciplines import DATA_FOLDER_ENV, DISCIPLINES
+    from xc_viewer import app, datafolder
+    from xc_viewer.core.disciplines import DATA_FOLDER_ENV, DISCIPLINES
 
-    folder = tmp_path / "xc-thermal-viewer-data"
+    folder = tmp_path / "xc-viewer-data"
     (folder / "paragliders").mkdir(parents=True)
     # datafolder.use() writes the process environment; let monkeypatch restore it.
     monkeypatch.setenv(DATA_FOLDER_ENV, str(tmp_path))
@@ -303,7 +303,7 @@ def test_pending_route_results_stay_hidden_until_fullscreen_exit(
 
 
 def test_3d_dialog_fullscreen_shows_only_terrain_and_restores_controls(qapp):
-    from xc_thermal_viewer.widgets.thermal_3d import Thermal3D
+    from xc_viewer.widgets.thermal_3d import Thermal3D
 
     dialog = Thermal3D()
     dialog.show()
@@ -413,7 +413,7 @@ def test_3d_native_fullscreen_and_map_toggle_are_independent(qapp):
     from PyQt6.QtCore import Qt
     from PyQt6.QtTest import QTest
 
-    from xc_thermal_viewer.widgets.thermal_3d import Thermal3D
+    from xc_viewer.widgets.thermal_3d import Thermal3D
 
     dialog = Thermal3D()
     try:

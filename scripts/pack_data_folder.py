@@ -12,7 +12,7 @@ reads into ``<destination>/paragliders`` and ``<destination>/hang_gliders``:
   planes, density rasters, terrain and imagery caches).
 
 The climb cache keeps only its current Vilpellet rows. Saved products then receive
-the portable fingerprints of this repository (see ``xc_thermal_viewer.fingerprint``),
+the portable fingerprints of this repository (see ``xc_viewer.fingerprint``),
 so the destination opens on any computer without preparing anything again.
 
 A product is re-stamped only if the thesis viewer still considers it current. The
@@ -47,9 +47,9 @@ from pathlib import Path
 import numpy as np
 import pyarrow.parquet as pq
 
-from xc_thermal_viewer import datafolder
-from xc_thermal_viewer.core.disciplines import DISCIPLINES, HANG_GLIDERS, PARAGLIDERS
-from xc_thermal_viewer.sqlite import connect
+from xc_viewer import datafolder
+from xc_viewer.core.disciplines import DISCIPLINES, HANG_GLIDERS, PARAGLIDERS
+from xc_viewer.sqlite import connect
 
 #: Files every discipline root contributes, relative to the root.
 INPUTS = (
@@ -285,14 +285,14 @@ def _stored(products: Path) -> dict:
 
 def _new_fingerprints(disciplines) -> dict:
     """This repository's fingerprints of the copied archive."""
-    from xc_thermal_viewer import (
+    from xc_viewer import (
         group_flights,
         route_density,
         route_index,
         thermal_index,
     )
-    from xc_thermal_viewer.thermal_activity import _validated_products
-    from xc_thermal_viewer.thermal_cache import segmentation_signature
+    from xc_viewer.thermal_activity import _validated_products
+    from xc_viewer.thermal_cache import segmentation_signature
 
     new = {}
     census = thermal_index.cache_path(disciplines)

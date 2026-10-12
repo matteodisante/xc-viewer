@@ -3,9 +3,9 @@
 import numpy as np
 import pandas as pd
 
-from xc_thermal_viewer.thermal_daily import height_levels, lattice_points, local_bounds
-from xc_thermal_viewer.thermal_geometry import ThermalCell, plane_intersections
-from xc_thermal_viewer.thermal_store import EDGE_COLUMNS
+from xc_viewer.thermal_daily import height_levels, lattice_points, local_bounds
+from xc_viewer.thermal_geometry import ThermalCell, plane_intersections
+from xc_viewer.thermal_store import EDGE_COLUMNS
 
 
 def test_lattice_matches_native_edges():
@@ -42,7 +42,7 @@ def test_step_and_dst():
 def test_season_days_wrap_years_and_clamp_leap_day():
     from datetime import date
 
-    from xc_thermal_viewer.thermal_daily import season_days
+    from xc_viewer.thermal_daily import season_days
 
     winter = season_days((12, 30), (1, 2), range(2023, 2025))
     assert winter == [
@@ -63,7 +63,7 @@ def test_season_days_wrap_years_and_clamp_leap_day():
 def test_wall_windows_follow_the_paris_clock_across_dst_changes():
     from datetime import date, datetime
 
-    from xc_thermal_viewer.thermal_daily import PARIS, wall_windows
+    from xc_viewer.thermal_daily import PARIS, wall_windows
 
     days = [date(2024, 3, 30), date(2024, 3, 31), date(2024, 10, 27)]
     windows = wall_windows(days, (8, 18.5))
@@ -76,7 +76,7 @@ def test_wall_windows_follow_the_paris_clock_across_dst_changes():
 
 
 def test_window_membership_is_half_open_and_spans_count_on_overlap():
-    from xc_thermal_viewer.thermal_daily import in_windows, overlaps_windows
+    from xc_viewer.thermal_daily import in_windows, overlaps_windows
 
     windows = np.array([[10.0, 20.0], [30.0, 40.0]])
     utc = [5, 10, 19.9, 20, 25, 30, 40, 50]

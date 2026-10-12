@@ -9,13 +9,13 @@ import pytest
 
 pytest.importorskip("PyQt6")
 
-from xc_thermal_viewer.core.naming import igc_path
-from xc_thermal_viewer.route_times import (
+from xc_viewer.core.naming import igc_path
+from xc_viewer.route_times import (
     DepartureWindow,
     filter_departures,
     with_flight_times,
 )
-from xc_thermal_viewer.widgets.route_comparison import _flight_datetime
+from xc_viewer.widgets.route_comparison import _flight_datetime
 
 
 @pytest.fixture
@@ -136,7 +136,7 @@ def test_departure_controls_list_all_days_preview_and_capture_request(
 ):
     from PyQt6.QtCore import QTime
 
-    from xc_thermal_viewer.widgets import route_comparison as widget_module
+    from xc_viewer.widgets import route_comparison as widget_module
 
     widget = widget_module.RouteComparison()
     pair = (90, 650, 100, 650)
@@ -207,7 +207,7 @@ def test_departure_controls_list_all_days_preview_and_capture_request(
 def test_changing_day_finds_departures_but_keeps_a_matching_custom_window(qapp):
     from PyQt6.QtCore import QTime
 
-    from xc_thermal_viewer.widgets.departure_filter import DepartureFilter
+    from xc_viewer.widgets.departure_filter import DepartureFilter
 
     times = pd.to_datetime(
         [
@@ -243,7 +243,7 @@ def test_changing_day_finds_departures_but_keeps_a_matching_custom_window(qapp):
 def test_applying_departure_window_preserves_day_time_and_preview(qapp):
     from PyQt6.QtCore import QTime
 
-    from xc_thermal_viewer.widgets.departure_filter import DepartureFilter
+    from xc_viewer.widgets.departure_filter import DepartureFilter
 
     times = pd.to_datetime(["2024-06-15T10:05Z", "2024-06-16T08:58Z"], utc=True)
     cohort = pd.DataFrame({"departure_utc": times.as_unit("s").asi8})
@@ -271,7 +271,7 @@ def test_departure_duration_edit_is_committed_as_one_value(qapp):
     from PyQt6.QtCore import Qt
     from PyQt6.QtTest import QTest
 
-    from xc_thermal_viewer.widgets.departure_filter import DepartureFilter
+    from xc_viewer.widgets.departure_filter import DepartureFilter
 
     control = DepartureFilter()
     changes = []
@@ -293,7 +293,7 @@ def test_departure_duration_edit_is_committed_as_one_value(qapp):
 
 
 def test_failed_departure_load_retains_scene_and_explains_it(qapp, monkeypatch):
-    from xc_thermal_viewer.widgets.route_comparison import RouteComparison
+    from xc_viewer.widgets.route_comparison import RouteComparison
 
     widget = RouteComparison()
     previous = object()

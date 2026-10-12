@@ -8,11 +8,11 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer import thermal_index
-from xc_thermal_viewer.core.disciplines import PARAGLIDERS
-from xc_thermal_viewer.core.igc import first_fix
-from xc_thermal_viewer.sqlite import connect
-from xc_thermal_viewer.thermal_index import (
+from xc_viewer import thermal_index
+from xc_viewer.core.disciplines import PARAGLIDERS
+from xc_viewer.core.igc import first_fix
+from xc_viewer.sqlite import connect
+from xc_viewer.thermal_index import (
     ThermalIndex,
     _create_tables,
     load_plane_data,
@@ -154,8 +154,8 @@ def test_index_streams_row_groups_once_and_reuses_completed_cache(
     import pyarrow as pa
     import pyarrow.parquet as pq
 
-    from xc_thermal_viewer.core.preproc.enu import geodetic_to_enu
-    from xc_thermal_viewer.thermal_geometry import project, unproject
+    from xc_viewer.core.preproc.enu import geodetic_to_enu
+    from xc_viewer.thermal_geometry import project, unproject
 
     derived, raw = tmp_path / "derived", tmp_path / "raw"
     derived.mkdir()
@@ -276,14 +276,14 @@ def test_default_cache_lives_on_the_archive_disk(tmp_path, monkeypatch):
     monkeypatch.setattr(
         type(PARAGLIDERS), "config", lambda _: SimpleNamespace(derived_dir=derived)
     )
-    monkeypatch.delenv("XC_THERMAL_VIEWER_CACHE_DIR", raising=False)
+    monkeypatch.delenv("XC_VIEWER_CACHE_DIR", raising=False)
     assert thermal_index.cache_path([PARAGLIDERS]) == (
         derived / "viewer/thermal-planes/thermal-cells.sqlite3"
     )
 
 
 def test_config_change_invalidates_climb_products(index, monkeypatch, tmp_path):
-    from xc_thermal_viewer import thermal_cache
+    from xc_viewer import thermal_cache
 
     config = tmp_path / "vilpellet.yaml"
     config.write_text("version: 1")
@@ -297,13 +297,13 @@ def test_offline_export_requires_complete_climbs_and_is_standalone(index, monkey
     import runpy
     from dataclasses import replace
 
-    from xc_thermal_viewer.thermal_cache import ClimbCache
-    from xc_thermal_viewer.thermal_ranking import rank_cells
-    from xc_thermal_viewer.thermal_store import ThermalStore, export_store
+    from xc_viewer.thermal_cache import ClimbCache
+    from xc_viewer.thermal_ranking import rank_cells
+    from xc_viewer.thermal_store import ThermalStore, export_store
 
     cell = index.cells()[0]
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_store.terrain_reference",
+        "xc_viewer.thermal_store.terrain_reference",
         lambda c: {"minimum_m": c.ground_m, "maximum_m": c.ground_m},
     )
     edges = pd.DataFrame(
@@ -331,12 +331,12 @@ def test_offline_export_requires_complete_climbs_and_is_standalone(index, monkey
     # Publication must reuse the exact DEM used to rank, even when the
     # launch category differs and no repository raster exists for the winner.
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_ranking._cell_terrain",
+        "xc_viewer.thermal_ranking._cell_terrain",
         lambda *a: {"minimum_m": 350, "maximum_m": 700},
     )
     ranked = rank_cells(index)
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_store.terrain_reference",
+        "xc_viewer.thermal_store.terrain_reference",
         lambda c: pytest.fail("ranking reference must be reused"),
     )
     published = path
@@ -368,10 +368,10 @@ def test_offline_export_requires_complete_climbs_and_is_standalone(index, monkey
 def test_quality_changes_launch_audit_without_changing_terrain_or_crossing_flights(
     index, tmp_path, monkeypatch
 ):
-    from xc_thermal_viewer.thermal_ranking import rank_cells
+    from xc_viewer.thermal_ranking import rank_cells
 
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_ranking._cell_terrain",
+        "xc_viewer.thermal_ranking._cell_terrain",
         lambda *a: {"minimum_m": 200, "maximum_m": 250},
     )
     assert rank_cells(index).cells()[0].terrain == "Plains"
@@ -404,10 +404,10 @@ def test_quality_changes_launch_audit_without_changing_terrain_or_crossing_fligh
 
 
 def test_top_three_use_all_crossers_and_break_ties_by_grid_position(index, monkeypatch):
-    from xc_thermal_viewer.thermal_ranking import rank_cells
+    from xc_viewer.thermal_ranking import rank_cells
 
     monkeypatch.setattr(
-        "xc_thermal_viewer.thermal_ranking._cell_terrain",
+        "xc_viewer.thermal_ranking._cell_terrain",
         lambda *a: {"minimum_m": 200, "maximum_m": 250},
     )
     with connect(index.path) as db:

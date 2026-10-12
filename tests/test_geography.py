@@ -1,4 +1,4 @@
-"""Tests for xc_thermal_viewer.geography (matplotlib only, no display needed)."""
+"""Tests for xc_viewer.geography (matplotlib only, no display needed)."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ matplotlib.use("Agg")
 
 import matplotlib.pyplot as plt
 
-from xc_thermal_viewer import geography
+from xc_viewer import geography
 
 
 def test_load_basemap_reads_the_committed_file_and_has_a_world_panel():

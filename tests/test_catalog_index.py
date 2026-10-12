@@ -1,4 +1,4 @@
-"""Tests for xc_thermal_viewer.catalog_index (Qt-free logic layer).
+"""Tests for xc_viewer.catalog_index (Qt-free logic layer).
 
 Never against the real multi-MB/GB catalog.csv / flights_meta.parquet -- small
 synthetic tables written under tmp_path, with Discipline.config() monkeypatched to
@@ -10,9 +10,9 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
-from xc_thermal_viewer import catalog_index
-from xc_thermal_viewer.core import disciplines as disciplines_mod
-from xc_thermal_viewer.core.disciplines import DataRoot
+from xc_viewer import catalog_index
+from xc_viewer.core import disciplines as disciplines_mod
+from xc_viewer.core.disciplines import DataRoot
 
 _CATALOG_ROWS = [
     {

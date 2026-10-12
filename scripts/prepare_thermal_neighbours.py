@@ -16,13 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
-from xc_thermal_viewer.locking import BusyError, exclusive  # noqa: E402
-from xc_thermal_viewer.thermal_neighbours import (  # noqa: E402
+from xc_viewer.locking import BusyError, exclusive  # noqa: E402
+from xc_viewer.thermal_neighbours import (  # noqa: E402
     prepare_neighbour_imagery,
     prepare_neighbour_points,
     prepare_neighbour_terrain,
 )
-from xc_thermal_viewer.thermal_store import load_store  # noqa: E402
+from xc_viewer.thermal_store import load_store  # noqa: E402
 
 BUSY = "Another offline preparation is already running."
 
