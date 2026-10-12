@@ -352,7 +352,7 @@ class WelcomeScreen(QWidget):
         self._timer.timeout.connect(self.update)
 
         self._eyebrow = self._label("FLIGHTS · THERMALS · COLLECTIVE MOTION", "#b0cfcb")
-        self._title = self._label("XC\nViewer", "#f3f4e9")
+        self._title = self._label("XC Viewer", "#f3f4e9")
         self._subtitle = self._label(
             "Explore soaring flights, thermal climbs\n"
             "and the patterns that connect them.",
@@ -505,8 +505,8 @@ class WelcomeScreen(QWidget):
         inset = round(max(32, min(108, width * 0.075)))
         compact = width < 950 or height < 640
         title_size = 48 if compact else min(78, round(width * 0.057))
-        title_height = round(title_size * 2.45)
-        top = round(height * (0.20 if compact else 0.23))
+        title_height = round(title_size * 1.3)
+        top = round(height * (0.26 if compact else 0.29))
         text_width = max(360, round(width * 0.47))
         eyebrow_font = QFont(self.font())
         eyebrow_font.setPixelSize(10 if compact else 11)
