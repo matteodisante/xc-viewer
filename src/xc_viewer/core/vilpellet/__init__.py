@@ -7,8 +7,6 @@ law over the eight possible feature triples, Viterbi decoding under parameters f
 once on 2019 Alpine paraglider flights, and a rolling majority vote over the decoded
 path.  No parameter is re-estimated here.
 
-It is the only segmentation this viewer uses.
-
 Typical use::
 
     from xc_viewer.core.vilpellet import (

@@ -76,8 +76,8 @@ track is drawn and the status line gives the reason.</li>
 
 <h3>Colours of the cleaned track</h3>
 <ul>
-<li><b>Flight phase:</b> each cleaned fix carries one of three labels, given by the
-Vilpellet segmentation. <b>Climb</b>: circling upwards, usually in a thermal.
+<li><b>Flight phase:</b> each cleaned fix carries one of three labels.
+<b>Climb</b>: circling upwards, usually in a thermal.
 <b>Search</b>: turning without a steady climb, typically looking for lift.
 <b>Transition</b>: flying fairly straight, usually gliding between thermals. Grey
 parts are unclassified. The legend names the colours.</li>
@@ -85,9 +85,21 @@ parts are unclassified. The legend names the colours.</li>
 track.</li>
 <li><b>Discipline:</b> one colour for paragliders, another for hang gliders.</li>
 </ul>
-<p>With <b>Thermals only</b>, the title counts the <b>climb runs</b> (unbroken
-stretches labelled climb) and adds up their minutes. A run is not always a separate
-thermal: a pilot who leaves a thermal briefly and comes back makes two runs.</p>
+<h3>Two segmentations</h3>
+<ul>
+<li><b>Vilpellet</b>: the segmentation of Vilpellet, Darmon and Benzaquen, with
+their fitted parameters. It labels only flights logged about once per second.</li>
+<li><b>Gaussian</b>: averages of vertical speed, horizontal speed and turning over
+30-s windows, decided every 10 s by a model fitted on this archive, one per
+discipline. It labels flights logged every 10 s or faster.</li>
+<li><b>Both</b>: Vilpellet as a wide pale band, Gaussian as a thin line over it,
+each in the colours of its own phases. Where the two agree, the line runs inside a
+band of its own colour.</li>
+</ul>
+<p>With one <b>Phase</b> chosen, only that phase is drawn and the title counts its
+<b>runs</b> (unbroken stretches with that label) and adds up their minutes. A run is
+not always a separate thermal: a pilot who leaves a thermal briefly and comes back
+makes two runs.</p>
 
 <h3>Axes</h3>
 <ul>
@@ -98,9 +110,8 @@ starts, and altitude. Distances can be read directly.</li>
 
 <h3>Status line</h3>
 <p>Under the flight list: the file, whether processing kept the flight, and the
-share of its cleaned fixes that received a phase label. Only flights logged about
-once per second for about an hour or more can be labelled; for the others the line
-says why nothing was labelled.</p>
+share of its cleaned fixes that received a phase label from each segmentation.
+When a segmentation labels nothing, the line says why.</p>
 <p>This screen cleans and labels the opened flight from its IGC file each time; the
 other screens read results prepared from the whole archive and saved in the data
 folder. See {_link("processing", "Processing a flight")} and
@@ -131,7 +142,8 @@ could not be shown. The first search of a session takes a few seconds.</p>
 <ul>
 <li><b>Show raw</b> and <b>Show cleaned</b> switch each track on or off.</li>
 <li><b>Cleaned colour</b>: Flight phase, Cleaning segment or Discipline.</li>
-<li><b>Thermals only (climb)</b> hides everything except the climbs.</li>
+<li><b>Segmentation</b>: Vilpellet, Gaussian, or Both overlaid.</li>
+<li><b>Phases</b>: all of them, or only climb, search or transition.</li>
 <li><b>Frame</b>, <b>X</b> and <b>Y</b> choose the coordinates of the two axes.</li>
 <li><b>Degrees-minutes-seconds</b> writes geographic axis labels as
 45&deg;10&prime;30&Prime; instead of decimal degrees.</li>

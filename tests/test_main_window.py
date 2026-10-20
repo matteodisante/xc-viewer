@@ -435,3 +435,37 @@ def test_3d_native_fullscreen_and_map_toggle_are_independent(qapp):
         assert dialog._heading.isVisible() and dialog._point_size.isVisible()
     finally:
         dialog.close()
+
+
+def test_both_segmentations_overlay_one_phase_as_band_and_line(window):
+    from xc_viewer.core.preproc.enu import LocalFrame
+    from xc_viewer.data import PhaseTrack
+
+    fixes = pd.DataFrame(
+        {"segment_id": 0, "track_run": 0, "t": 60.0 * np.arange(8), "N": 0.0}
+    ).assign(E=lambda f: f["t"], z=1000.0)
+
+    def track(phases):
+        table = fixes.assign(phase=phases)
+        table["phase_run"] = table["phase"].ne(table["phase"].shift()).cumsum() - 1
+        return PhaseTrack(fixes=table, mapping_method="test")
+
+    window._cleaned = SimpleNamespace(kept=True, fixes=fixes)
+    window._frame = LocalFrame(lat0_deg=45.0, lon0_deg=7.0, alt0_m=1000.0)
+    window._phases = {
+        "vilpellet": track(["climb"] * 4 + ["search"] * 4),
+        "gaussian": track(["search"] * 2 + ["climb"] * 4 + ["search"] * 2),
+    }
+    controls = window._controls
+    controls._frame_combo.setCurrentIndex(1)
+    controls._method_combo.setCurrentIndex(controls._method_combo.findData("both"))
+    controls._phase_combo.setCurrentIndex(controls._phase_combo.findData("climb"))
+
+    ax = window._figure.axes[0]
+    assert ax.get_title() == (
+        "Vilpellet: 1 climb run, 3 min · Gaussian: 1 climb run, 3 min"
+    )
+    band, line = ax.get_lines()
+    assert (band.get_label(), line.get_label()) == ("Vilpellet climb", "Gaussian climb")
+    assert band.get_linewidth() > line.get_linewidth()
+    assert list(line.get_xdata()) == [120.0, 180.0, 240.0, 300.0]

@@ -218,6 +218,7 @@ vertical.</li>
 
 
 def _phases() -> str:
+    from ..core.gaussian import load_gaussian_config
     from ..core.vilpellet import load_vilpellet_config
 
     cfg = load_vilpellet_config()
@@ -225,9 +226,13 @@ def _phases() -> str:
     alpha = cfg.alpha_straight_rad
     half = feat.persistence_fixes // 2
     agree = math.ceil(feat.beta_persistence * half)
+    gauss = load_gaussian_config()
+    policy = gauss.policy
     return f"""
 {_heading("phases")}
-<p>The labels climb, search and transition come from the segmentation of
+<p>The Trajectory screen offers two segmentations of a flight into climb, search and
+transition. The thermal screens use the Vilpellet climbs.</p>
+<p><b>Vilpellet.</b> The labels come from the segmentation of
 J.&nbsp;Vilpellet, A.&nbsp;Darmon and M.&nbsp;Benzaquen, <a href="{VILPELLET_PAPER}">
 <i>From Random Walks to Thermal Rides: Universal Anomalous Transport in Soaring
 Flights</i></a> (2026). It is ported from the authors' code and uses their fitted
@@ -262,6 +267,33 @@ track.</li>
 <p>The authors ran the method on raw GNSS tracks; here it runs on the cleaned
 tracks, so positions are smoothed twice. Short runs are the least reliable, as the
 authors warn.</p>
+<p><b>Gaussian.</b> A segmentation fitted on this archive, one model per
+discipline.</p>
+<ol>
+<li><b>Which flights.</b> Every piece of cleaned track logged at a regular interval
+of at most {gauss.max_native_dt_s:g} s.</li>
+<li><b>Four features every {gauss.decision_step_s:g} s</b>, averaged over a window of
+{gauss.window_s:g} s centred on the decision time: the vertical speed, the horizontal
+speed, the absolute turn rate (zero below {gauss.min_horizontal_speed_mps:g} m/s of
+horizontal speed) and the turn coherence, the net turn divided by the total turn: 1
+when the glider turns one way throughout, 0 when its turns cancel.</li>
+<li><b>No label</b> where a window leaves its piece of track, or touches an altitude
+reconstructed by the cleaning or an edge of its smoothing.</li>
+<li><b>Model.</b> A hidden Markov model with three states, each producing the four
+features from its own Gaussian law, fitted on each discipline's cleaned flights. The
+labels ignore the coherence (the Gaussians are integrated over it), and the fitted
+transition probabilities are blended, with weight {policy.weight:g}, towards a
+preference: the mean duration of transition and climb is pushed towards
+{policy.mean_dwell_s:g} s when the fit makes them shorter, that of search towards
+{policy.search_mean_dwell_s:g} s;
+search is mostly followed by climb, climb by transition, transition by either. The
+most likely sequence of states is found by the Viterbi algorithm.</li>
+<li><b>From decisions to fixes.</b> Each fix takes the label of the decision whose
+{gauss.decision_step_s:g}-s cell contains it.</li>
+<li><b>Names.</b> The state with the highest mean vertical speed is called climb; of
+the other two, the faster and straighter is called transition. These names have not
+yet been checked against flights labelled by hand.</li>
+</ol>
 {_back()}
 """
 

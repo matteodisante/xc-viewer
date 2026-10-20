@@ -2,9 +2,9 @@
 
 Interactive viewer of cross-country paraglider and hang-glider flights from the French
 FFVL contest archive (CFD). It shows single tracks with their flight phases
-(Vilpellet segmentation), launch maps, route comparisons and group flights, and the
-thermals the pilots climbed: thermal planes over 5 km cells and regional thermal-time
-maps.
+(Vilpellet segmentation, or a Gaussian one fitted on this archive), launch maps, route
+comparisons and group flights, and the thermals the pilots climbed: thermal planes over
+5 km cells and regional thermal-time maps.
 
 
 ## Project and development
@@ -142,7 +142,9 @@ licences; in particular PyQt6, the window toolkit, is GPL v3.
 J. Vilpellet, A. Darmon and M. Benzaquen, *From Random Walks to Thermal Rides: Universal
 Anomalous Transport in Soaring Flights*,
 [arXiv:2601.01293](https://arxiv.org/abs/2601.01293) (2026), ported from the
-authors' code with their fitted parameters.
+authors' code with their fitted parameters. The single-track view can also label
+them with a Gaussian segmentation, fitted per discipline on this archive
+(`src/xc_viewer/configs/segmentation_gaussian.yaml`).
 
 **Flight tracks:** FFVL contest archive (CFD),
 [paragliders](https://parapente.ffvl.fr/cfd/liste) and

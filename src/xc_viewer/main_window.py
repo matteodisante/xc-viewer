@@ -46,12 +46,15 @@ if TYPE_CHECKING:
     from .core.preproc.enu import LocalFrame
     from .core.preproc.pipeline import FlightResult
 
-# The title above a phase-coloured trajectory: the only segmentation the viewer shows.
-SEGMENTATION_TITLE = "Vilpellet segmentation"
+# Display names of the segmentations, keyed as `PlotControls.segmentation`.
+SEGMENTATION_NAMES = {"vilpellet": "Vilpellet", "gaussian": "Gaussian"}
 
-# Why the segmenter left a flight unlabelled, in words a status line can carry.  The
-# keys are Vilpellet's `phase_reason` values.
+# Why a segmenter left a flight unlabelled, in words a status line can carry.  The
+# keys are the `phase_reason` values of both segmenters.
 _REASON_TEXT = {
+    "no_eligible_decisions": "no piece of track logged every 10 s or faster",
+    "feature_edge": "every piece of track shorter than the 30-s feature window",
+    "quality_masked": "every window touches reconstructed altitude",
     "flight_shorter_than_author_guard": (
         "shorter than the author's 3600-fix minimum flight"
     ),
@@ -94,7 +97,7 @@ class MainWindow(QMainWindow):
         self._flight_id: str | None = None
         self._raw: data.RawTrack | None = None
         self._cleaned: FlightResult | None = None
-        self._phases: data.PhaseTrack | None = None
+        self._phases: dict[str, data.PhaseTrack | None] = {}
         self._frame: LocalFrame | None = None
         self._view_key: tuple | None = None
         self._saved_views: dict[tuple, dict] = {}
@@ -329,37 +332,38 @@ class MainWindow(QMainWindow):
         self._tabs.setCurrentIndex(0)
         self._on_flight_chosen(igc_path, discipline, flight_id)
 
-    def _vilpellet_status_text(self) -> str:
-        """A short status clause for the Vilpellet segmentation of the current flight.
+    def _phase_status_text(self, method: str) -> str:
+        """A short status clause for one segmentation of the current flight.
 
         Returns:
             A sentence naming the classified fraction, or the reason nothing was
             classified when the flight failed the segmenter's own eligibility gate.
         """
-        track = self._phases
+        name = SEGMENTATION_NAMES[method]
+        track = self._phases.get(method)
         if track is None:
-            return "Vilpellet configuration unavailable; using segment colours."
+            return f"{name} configuration unavailable."
         classified = track.fixes["phase"].ne("unclassified")
         if not classified.any():
             reasons = track.fixes["phase_reason"].value_counts()
             reason = str(reasons.index[0]) if len(reasons) else "unknown"
             text = _REASON_TEXT.get(reason, reason)
-            return f"Vilpellet segmentation: none classified ({text})."
+            return f"{name} segmentation: none classified ({text})."
         percent = 100.0 * classified.mean()
-        return f"Vilpellet segmentation: {percent:.1f}% of cleaned fixes classified."
+        return f"{name} segmentation: {percent:.1f}% of cleaned fixes classified."
 
     # -- flight loading ------------------------------------------------------------
     def _on_flight_chosen(
         self, igc_path: Path, discipline: Discipline, flight_id: str
     ) -> None:
-        """Load one flight's raw and cleaned tracks and its Vilpellet segmentation."""
+        """Load one flight's raw and cleaned tracks and both its segmentations."""
         self._saved_views.clear()
         self._view_key = None
         self._igc_path = igc_path
         self._discipline = discipline
         self._flight_id = flight_id
         self._cleaned = None
-        self._phases = None
+        self._phases = {}
         self._frame = None
 
         try:
@@ -395,13 +399,17 @@ class MainWindow(QMainWindow):
             )
 
         if self._cleaned is not None and self._cleaned.kept:
-            try:
-                self._phases = data.load_vilpellet_phases(
-                    self._cleaned.fixes, discipline
-                )
-                status += " " + self._vilpellet_status_text()
-            except Exception as exc:
-                status += f" Vilpellet segmentation could not be decoded ({exc})."
+            loaders = {
+                "vilpellet": data.load_vilpellet_phases,
+                "gaussian": data.load_gaussian_phases,
+            }
+            for method, load in loaders.items():
+                try:
+                    self._phases[method] = load(self._cleaned.fixes, discipline)
+                    status += " " + self._phase_status_text(method)
+                except Exception as exc:
+                    name = SEGMENTATION_NAMES[method]
+                    status += f" {name} segmentation could not be decoded ({exc})."
 
         if self._frame is None:
             # No pipeline-produced frame -- either it never ran that far, or it
@@ -417,17 +425,18 @@ class MainWindow(QMainWindow):
     def _redraw(self) -> None:
         """Draw the current flight under the selected axes, phase filter and camera.
 
-        ``climb_only`` filters the trajectory to the Vilpellet climb fixes before
-        drawing, and never draws the raw track.
+        A phase filter keeps only that phase's fixes and never draws the raw track.
+        The saved views are keyed on the filter but not on the segmentation, so
+        switching between segmentations keeps the zoom.
         """
         frame_kind = self._controls.frame_kind
         is_3d = self._controls.is_3d
         x, y = self._controls.x_column, self._controls.y_column
         z = self._controls.z_column if is_3d else None
-        climb_only = self._controls.climb_only
-        # Extended with `climb_only`, which changes what is drawn: the saved-view
+        phase_filter = self._controls.phase_filter
+        # Extended with `phase_filter`, which changes what is drawn: the saved-view
         # lookup below keys on the whole tuple, not just the axes.
-        key = (frame_kind, x, y, z, climb_only)
+        key = (frame_kind, x, y, z, phase_filter)
 
         if self._view_key is not None and self._figure.axes:
             old_primary = self._figure.axes[0]
@@ -496,7 +505,7 @@ class MainWindow(QMainWindow):
             return
 
         raw_table = None
-        if self._controls.show_raw and self._raw is not None and not climb_only:
+        if self._controls.show_raw and self._raw is not None and phase_filter is None:
             if frame_kind == "geographic":
                 raw_table = self._raw.fixes
             else:
@@ -516,7 +525,7 @@ class MainWindow(QMainWindow):
             x=x,
             y=y,
             z=z,
-            climb_only=climb_only,
+            phase_filter=phase_filter,
             color=color,
         )
         self._has_3d_data = is_3d and drawn
@@ -556,10 +565,14 @@ class MainWindow(QMainWindow):
         x: str,
         y: str,
         z: str | None,
-        climb_only: bool,
+        phase_filter: str | None,
         color: str,
     ) -> bool:
-        """Draw the flight's trajectory, phase-coloured by Vilpellet on request.
+        """Draw the flight's trajectory, phase-coloured by the chosen segmentation.
+
+        With both segmentations, Vilpellet is a wide band and Gaussian a thin line
+        over it, each coloured by its own phases: where they agree, the line runs
+        inside a band of its colour.
 
         Args:
             ax: The plot's axes.
@@ -567,96 +580,118 @@ class MainWindow(QMainWindow):
             x: Column to plot on the x-axis.
             y: Column to plot on the y-axis.
             z: Column to plot on the z-axis, or ``None`` for 2D.
-            climb_only: Whether to keep only the climb fixes.
+            phase_filter: The only phase to keep, or ``None`` for all.
             color: The cleaned trajectory's fallback colour.
 
         Returns:
             Whether a non-empty trajectory was actually plotted.
         """
-        phase_track = self._phases
-        cleaned_table = None
-        color_by: str | None = "segment_id"
-        group_by: str | None = None
-        color_map = None
-        frame_kind = self._controls.frame_kind
         frame = self._frame
-        show_cleaned = self._controls.show_cleaned
-        if show_cleaned and self._cleaned is not None and self._cleaned.kept:
-            if climb_only:
-                cleaned_fixes = (
-                    data.climb_only(phase_track.fixes)
-                    if phase_track is not None
-                    else self._cleaned.fixes.iloc[0:0]
-                )
-                phase_mode = phase_track is not None
-            else:
-                phase_mode = (
-                    self._controls.color_mode == "phase"
-                    and phase_track is not None
-                    and not phase_track.fixes.empty
-                )
-                cleaned_fixes = (
-                    phase_track.fixes
-                    if phase_mode and phase_track is not None
-                    else self._cleaned.fixes
-                )
-            if frame_kind == "geographic" and len(cleaned_fixes):
+        cleaned = self._cleaned
+        show_cleaned = (
+            self._controls.show_cleaned and cleaned is not None and cleaned.kept
+        )
+        both = self._controls.segmentation == "both"
+        methods = list(SEGMENTATION_NAMES) if both else [self._controls.segmentation]
+
+        def placed(fixes):
+            if self._controls.frame_kind == "geographic" and len(fixes):
                 # cleaned.kept implies frame is not None: both are set together, at
                 # (and only past) pipeline stage (v) -- see data.frame_from_meta.
                 assert frame is not None
-                cleaned_table = data.cleaned_to_geographic(cleaned_fixes, frame)
-            else:
-                cleaned_table = cleaned_fixes
-            if phase_mode:
-                color_by = "phase"
-                group_by = "phase_run"
-                color_map = plotting.PHASE_COLORS
-            elif self._controls.color_mode == "single":
-                color_by = None
-                group_by = "segment_id"
+                return data.cleaned_to_geographic(fixes, frame)
+            return fixes
+
+        # One phase-coloured layer per segmentation that labelled this flight.
+        layers = []
+        if show_cleaned and self._controls.color_mode == "phase":
+            for method in methods:
+                track = self._phases.get(method)
+                if track is None or track.fixes.empty:
+                    continue
+                fixes = track.fixes
+                if phase_filter is not None:
+                    fixes = data.phase_only(fixes, phase_filter)
+                layers.append((method, placed(fixes)))
+
+        common = {"x": x, "y": y, "z": z, "dms": self._controls.dms}
+        if not layers:
+            cleaned_table = None
+            color_by: str | None = "segment_id"
+            group_by: str | None = None
+            if show_cleaned and phase_filter is None:
+                assert cleaned is not None
+                cleaned_table = placed(cleaned.fixes)
+                if self._controls.color_mode == "single":
+                    color_by, group_by = None, "segment_id"
+            has_data = bool(
+                (raw_table is not None and len(raw_table))
+                or (cleaned_table is not None and len(cleaned_table))
+            )
+            if phase_filter is not None and not has_data:
+                plotting.center_message(
+                    ax, f"No {phase_filter} fixes to show.", is_3d=z is not None
+                )
+                return False
+            plotting.plot_trajectory(
+                ax,
+                raw=raw_table,
+                cleaned=cleaned_table,
+                cleaned_color=color,
+                color_by=color_by,
+                group_by=group_by,
+                **common,
+            )
+            return has_data
+
+        names = [SEGMENTATION_NAMES[method] for method, _ in layers]
+        if phase_filter is None:
+            title = (
+                f"{names[0]} (band) and {names[1]} (line) segmentations"
+                if len(layers) == 2
+                else f"{names[0]} segmentation"
+            )
+        else:
+            summaries = [
+                f"{name}: {self._runs_summary(table, phase_filter)}"
+                for name, (_, table) in zip(names, layers, strict=True)
+            ]
+            title = " · ".join(summaries)
+        ax.set_title(title)
 
         has_data = bool(
             (raw_table is not None and len(raw_table))
-            or (cleaned_table is not None and len(cleaned_table))
+            or any(len(table) for _, table in layers)
         )
-        title = SEGMENTATION_TITLE if color_by == "phase" else ""
-        if climb_only and cleaned_table is not None and len(cleaned_table):
-            n_thermals = (
-                cleaned_table["phase_run"].nunique()
-                if "phase_run" in cleaned_table
-                else 0
-            )
-            total_s = 0.0
-            if {"t", "phase_run"}.issubset(cleaned_table.columns):
-                total_s = float(
-                    cleaned_table.groupby("phase_run")["t"]
-                    .apply(lambda s: s.max() - s.min())
-                    .sum()
-                )
-            title += f" — {n_thermals} thermals, {total_s / 60:.0f} min"
-        if title:
-            ax.set_title(title)
-
-        if climb_only and not has_data:
+        if not has_data:
             plotting.center_message(
-                ax, "No Vilpellet climb fixes to show.", is_3d=z is not None
+                ax,
+                f"No {' or '.join(names)} {phase_filter} fixes to show.",
+                is_3d=z is not None,
             )
             return False
-
-        plotting.plot_trajectory(
-            ax,
-            raw=raw_table,
-            cleaned=cleaned_table,
-            x=x,
-            y=y,
-            z=z,
-            dms=self._controls.dms,
-            cleaned_color=color,
-            color_by=color_by,
-            group_by=group_by,
-            color_map=color_map,
-        )
+        for index, (method, table) in enumerate(layers):
+            plotting.plot_trajectory(
+                ax,
+                raw=raw_table if index == 0 else None,
+                cleaned=table,
+                color_by="phase",
+                group_by="phase_run",
+                color_map=plotting.PHASE_COLORS,
+                cleaned_band=both and method == "vilpellet",
+                legend_prefix=f"{SEGMENTATION_NAMES[method]} " if both else "",
+                **common,
+            )
         return has_data
+
+    @staticmethod
+    def _runs_summary(table, phase: str) -> str:
+        """``"12 climb runs, 85 min"`` for the runs of one phase in ``table``."""
+        if table.empty:
+            return f"no {phase}"
+        durations = table.groupby("phase_run")["t"].agg(lambda t: t.max() - t.min())
+        runs = "run" if len(durations) == 1 else "runs"
+        return f"{len(durations)} {phase} {runs}, {durations.sum() / 60:.0f} min"
 
     def _reset_view(self) -> None:
         """Reset the camera only when the user explicitly requests it."""

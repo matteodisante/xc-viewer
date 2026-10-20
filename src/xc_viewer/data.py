@@ -32,6 +32,7 @@ from .geodesy import enu_to_geodetic
 
 if TYPE_CHECKING:
     from .core.config import PreprocConfig
+    from .core.gaussian import GaussianConfig
     from .core.preproc.pipeline import FlightRecord
     from .core.vilpellet import VilpelletConfig
 
@@ -57,7 +58,7 @@ class RawTrack:
 
 @dataclass(frozen=True)
 class PhaseTrack:
-    """Every cleaned fix of one flight, coloured by its Vilpellet flight phase.
+    """Every cleaned fix of one flight, labelled by one flight-phase segmentation.
 
     ``phase_run`` changes at every phase, preprocessing-segment, or temporal-gap
     boundary.  The viewer uses it as a line-group key, preventing equal phases that
@@ -210,25 +211,75 @@ def load_vilpellet_phases(
     )
 
 
-def climb_only(fixes: pd.DataFrame) -> pd.DataFrame:
-    """The climb fixes of a labelled track, with every thermal kept apart.
+@lru_cache(maxsize=4)
+def _load_gaussian_config(config_path: str, config_mtime_ns: int) -> GaussianConfig:
+    """Load and cache the Gaussian segmenter until its YAML changes on disk."""
+    del config_mtime_ns  # part of the cache key; the loader only needs the path
+    from .core.gaussian import load_gaussian_config
 
-    ``phase_run`` is carried through untouched, so each thermal remains its own line
-    group.  ``track_run`` is renumbered one value per retained run: with the
-    intervening search and transition fixes no longer displayed, two thermals are no
-    longer two parts of one continuous displayed track, and the drawing code must not
-    close the edge between them.
+    return load_gaussian_config(config_path)
+
+
+def load_gaussian_phases(
+    cleaned_fixes: pd.DataFrame,
+    discipline: Discipline,
+    *,
+    config: GaussianConfig | None = None,
+) -> PhaseTrack | None:
+    """Label the selected cleaned flight with the Gaussian segmenter.
+
+    Decisions are made on the 10-s grid and each native fix takes the label of the
+    decision cell it falls in (:func:`phases_on_cleaned_fixes`).
+
+    Args:
+        cleaned_fixes: One retained, fully preprocessed flight.
+        discipline: Its viewer discipline; selects the fitted model.
+        config: An already-loaded configuration; the configured one when omitted.
+
+    Returns:
+        A phase track, or ``None`` when ``segmentation_gaussian.yaml`` cannot be read.
+    """
+    from .core.coverage import native_coverage_summary
+    from .core.gaussian import config as gaussian_config
+    from .core.gaussian import segment_flight
+
+    if config is None:
+        path = Path(gaussian_config.DEFAULT_GAUSSIAN_CONFIG_PATH)
+        try:
+            config = _load_gaussian_config(str(path), path.stat().st_mtime_ns)
+        except (OSError, KeyError, TypeError, ValueError):
+            return None
+    points = segment_flight(cleaned_fixes, config, discipline=discipline.name)
+    fixes = phases_on_cleaned_fixes(
+        cleaned_fixes, points, decision_step_s=config.decision_step_s
+    )
+    return PhaseTrack(
+        fixes=fixes,
+        mapping_method="gaussian-fitted-ffvl",
+        coverage=native_coverage_summary(fixes),
+    )
+
+
+def phase_only(fixes: pd.DataFrame, phase: str) -> pd.DataFrame:
+    """The fixes of one phase in a labelled track, with every run kept apart.
+
+    ``phase_run`` is carried through untouched, so each run remains its own line
+    group.  ``track_run`` is renumbered one value per retained run: with the fixes of
+    the other phases no longer displayed, two runs are no longer two parts of one
+    continuous displayed track, and the drawing code must not close the edge between
+    them.
 
     Args:
         fixes: A labelled fix table carrying a ``phase`` column.
+        phase: ``climb``, ``search`` or ``transition``.
 
     Returns:
-        A copy holding only the fixes labelled ``climb``.  An unlabelled table yields
+        A copy holding only the fixes labelled ``phase``.  An unlabelled table yields
         an empty result with the same columns.
     """
     if "phase" not in fixes.columns:
         return fixes.iloc[:0].copy()
-    kept = fixes.loc[fixes["phase"] == "climb"].copy()
+    kept = fixes.loc[fixes["phase"] == phase].copy()
     if "track_run" in kept.columns and "phase_run" in kept.columns:
         kept["track_run"] = pd.factorize(kept["phase_run"])[0]
     return kept

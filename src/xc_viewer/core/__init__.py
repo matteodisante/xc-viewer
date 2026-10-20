@@ -1,1 +1,1 @@
-"""IGC parsing, cleaning and Vilpellet segmentation of single flights."""
+"""IGC parsing, cleaning and flight-phase segmentation of single flights."""

@@ -113,6 +113,8 @@ def plot_trajectory(
     raw_label: str = "raw",
     cleaned_label: str = "cleaned",
     mark_raw_endpoints: bool = True,
+    cleaned_band: bool = False,
+    legend_prefix: str = "",
 ) -> None:
     """Draw the raw and/or cleaned trajectory on ``ax``, overlaid.
 
@@ -165,6 +167,10 @@ def plot_trajectory(
             very last fix with distinct markers -- so the raw line reads as running
             the whole recorded track end to end, not a subset it's easy to mistake
             for the full one at a glance.
+        cleaned_band: Draw the cleaned trajectory as a wide translucent band without
+            fix markers, so a thin line drawn over it stays readable: the viewer
+            overlays two segmentations of one flight this way.
+        legend_prefix: Text put before each ``color_map`` legend label.
     """
     if raw is not None and len(raw):
         _draw(
@@ -211,12 +217,14 @@ def plot_trajectory(
             z,
             color=cleaned_color,
             ls="-",
-            lw=1.4,
-            alpha=1.0,
+            lw=7.0 if cleaned_band else 1.4,
+            alpha=0.35 if cleaned_band else 1.0,
             label=cleaned_label,
             color_by=color_by,
             group_by=color_by if group_by is None else group_by,
             color_map=color_map,
+            marker="." if color_map is not None and not cleaned_band else None,
+            legend_prefix=legend_prefix,
         )
     ax.set_xlabel(_axis_label(x, dms))
     ax.set_ylabel(_axis_label(y, dms))
@@ -269,6 +277,8 @@ def _draw_grouped(
     color_by,
     group_by,
     color_map,
+    marker,
+    legend_prefix,
 ):
     """Draw ``table`` as one line per ``group_by`` value, coloured by ``color_by``.
 
@@ -288,7 +298,9 @@ def _draw_grouped(
         )
         mapped_color = color_map.get(value, color) if color_map is not None else color
         if color_map is not None and value is not None:
-            line_label = value if value not in labelled_values else "_nolegend_"
+            line_label = (
+                legend_prefix + value if value not in labelled_values else "_nolegend_"
+            )
             labelled_values.add(value)
         else:
             line_label = label if first else "_nolegend_"
@@ -314,7 +326,7 @@ def _draw_grouped(
             lw=lw,
             alpha=alpha,
             label=line_label,
-            marker="." if color_map is not None else None,
+            marker=marker,
         )
         first = False
 

@@ -108,10 +108,23 @@ class PlotControls(QWidget):
         self._color_combo.addItem("Cleaning segment", "segment")
         self._color_combo.addItem("Discipline", "single")
         self._color_combo.setToolTip(
-            "Colour of the cleaned track: Vilpellet flight phase, preprocessing "
-            "segment, or one colour per discipline."
+            "Colour of the cleaned track: flight phase, preprocessing segment, or "
+            "one colour per discipline."
         )
-        self._chk_climb_only = QCheckBox("Thermals only (climb)")
+        self._method_combo = QComboBox()
+        self._method_combo.addItem("Vilpellet", "vilpellet")
+        self._method_combo.addItem("Gaussian", "gaussian")
+        self._method_combo.addItem("Both", "both")
+        self._method_combo.setToolTip(
+            "Which segmentation labels the phases. Both: Vilpellet as a wide band, "
+            "Gaussian as a thin line over it."
+        )
+        self._phase_combo = QComboBox()
+        self._phase_combo.addItem("All", None)
+        self._phase_combo.addItem("Climb", "climb")
+        self._phase_combo.addItem("Search", "search")
+        self._phase_combo.addItem("Transition", "transition")
+        self._phase_combo.setToolTip("Show every phase, or only one of them.")
         self._btn_save_pdf = QPushButton("Save PDF…")
         self._info, self._howto = help_buttons("trajectory", self)
 
@@ -120,7 +133,8 @@ class PlotControls(QWidget):
         display_row.addWidget(self._chk_raw)
         display_row.addWidget(self._chk_cleaned)
         display_row.addWidget(labeled_control("Cleaned colour", self._color_combo))
-        display_row.addWidget(self._chk_climb_only)
+        display_row.addWidget(labeled_control("Segmentation", self._method_combo))
+        display_row.addWidget(labeled_control("Phases", self._phase_combo))
         display_row.addWidget(self._btn_save_pdf)
         display_row.addWidget(self._info)
         display_row.addWidget(self._howto)
@@ -145,7 +159,8 @@ class PlotControls(QWidget):
         self._chk_cleaned.toggled.connect(self.changed.emit)
         self._color_combo.currentIndexChanged.connect(self._sync_phase_controls)
         self._color_combo.currentIndexChanged.connect(self.changed.emit)
-        self._chk_climb_only.toggled.connect(self.changed.emit)
+        self._method_combo.currentIndexChanged.connect(self.changed.emit)
+        self._phase_combo.currentIndexChanged.connect(self.changed.emit)
         self._btn_save_pdf.clicked.connect(self.save_pdf_requested.emit)
 
         for slider, label, suffix in (
@@ -211,9 +226,19 @@ class PlotControls(QWidget):
         return self._color_combo.currentData()
 
     @property
-    def climb_only(self) -> bool:
-        """Whether to keep only the climb fixes, hiding the rest of the flight."""
-        return self._chk_climb_only.isChecked()
+    def segmentation(self) -> str:
+        """``vilpellet``, ``gaussian`` or ``both``."""
+        return self._method_combo.currentData()
+
+    @property
+    def phase_filter(self) -> str | None:
+        """The only phase to show, or ``None`` for all phases.
+
+        Always ``None`` unless the cleaned track is coloured by phase.
+        """
+        if self.color_mode != "phase":
+            return None
+        return self._phase_combo.currentData()
 
     @property
     def azim_deg(self) -> int:
@@ -279,4 +304,5 @@ class PlotControls(QWidget):
 
     def _sync_phase_controls(self) -> None:
         """Enable the phase-only inputs exactly while phase colouring is selected."""
-        self._chk_climb_only.setEnabled(self.color_mode == "phase")
+        for combo in (self._method_combo, self._phase_combo):
+            combo.setEnabled(self.color_mode == "phase")
