@@ -6,6 +6,28 @@ FFVL contest archive (CFD). It shows single tracks with their flight phases
 comparisons and group flights, and the thermals the pilots climbed: thermal planes over
 5 km cells and regional thermal-time maps.
 
+## This branch: `feature/gaussian-segmentation`
+
+In the **Trajectory** tab, with **Cleaned colour** set to **Flight phase**:
+
+- **Segmentation** labels the flight with Vilpellet's segmentation, with the Gaussian
+  one, or with **Both**: Vilpellet as a wide pale band, Gaussian as a thin line over it.
+- **Phases** shows all phases, or only climb, search or transition.
+
+To launch this branch instead of `main` (the [requirements](#requirements) and the data
+folder are the same as below):
+
+```bash
+uvx --from git+https://github.com/matteodisante/xc-viewer@feature/gaussian-segmentation xc-viewer
+```
+
+From a clone of this repository:
+
+```bash
+git switch feature/gaussian-segmentation
+uv run xc-viewer
+```
+
 
 ## Project and development
 
