@@ -12,8 +12,7 @@ The **Group flights** tab is rebuilt on the groups found by the delayed-contact 
 [xc-lab](https://github.com/matteodisante/xc-lab) (`ideas/group-identification`):
 
 - The tables are read from the `groups/` folder of the data folder, where xc-lab's
-  `export_viewer.py` copies one run with its `PARAMETERS.md`; **Group tables…** picks
-  another folder.
+  `export_viewer.py` copies one run with its `PARAMETERS.md`.
 - Episodes are ranked by distinct flights, largest configuration, duration or distance.
 - **Load episode** draws the members on the terrain of Routes; **Play** and the time
   slider move them as numbered dots in the colour of their configuration, joined by

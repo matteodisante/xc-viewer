@@ -584,9 +584,9 @@ def groups_howto() -> str:
     """How to load and replay an episode."""
     return """
 <ol>
-<li>The tables are read from the <code>groups/</code> folder of the data folder, where
-xc-lab exports them. To read another folder, click <b>Group tables…</b>; the viewer
-remembers it when the data folder has no <code>groups/</code>.</li>
+<li>The tables are read from the <code>groups/</code> folder of the data folder. To show
+another run of the group identification, export it there with
+<code>export_viewer.py</code> of xc-lab and choose the data folder again.</li>
 <li>If the status line asks for it, click <b>Prepare / refresh index</b> once: it
 builds the census of cleaned tracks that Routes uses too.</li>
 <li>Pick <b>Rank by</b>, a discipline, a year and <b>Minimum flights</b>; the list of
