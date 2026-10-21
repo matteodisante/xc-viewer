@@ -7,6 +7,25 @@ from PyQt6.QtGui import QColor, QFont, QPainter, QPen
 from pyqtgraph.opengl.GLGraphicsItem import GLGraphicsItem
 
 
+def screen_points(item, xyz):
+    """Project scene coordinates to the pixels of the item's view.
+
+    Returns the points and whether each lies in front of the camera and in view.
+    """
+    matrix = np.asarray(item.mvpMatrix().data()).reshape(4, 4, order="F")
+    clip = np.column_stack((xyz, np.ones(len(xyz)))) @ matrix.T
+    visible = np.isfinite(clip).all(axis=1) & (clip[:, 3] > 0)
+    visible &= (abs(clip[:, :3]) <= clip[:, 3:]).all(axis=1)
+    ndc = clip[:, :2] / np.where(clip[:, 3:] != 0, clip[:, 3:], 1)
+    points = np.column_stack(
+        (
+            (ndc[:, 0] + 1) * item.view().width() / 2,
+            (1 - ndc[:, 1]) * item.view().height() / 2,
+        )
+    )
+    return points, visible
+
+
 class RouteAnnotations(GLGraphicsItem):
     """Circles mark first clean fixes, squares last fixes, and A/B mark cells."""
 
@@ -14,7 +33,7 @@ class RouteAnnotations(GLGraphicsItem):
         """Keep original endpoint coordinates and separate cell-centre anchors."""
         super().__init__()
         self.endpoints = np.array([[track[0][0], track[-1][-1]] for track in tracks])
-        self.anchors = np.asarray(anchors)
+        self.anchors = np.asarray(anchors, float).reshape(-1, 3)
         self.mask = np.ones(len(tracks), dtype=bool)
         self.selected = set()
         self.setGLOptions("translucent")
@@ -26,21 +45,6 @@ class RouteAnnotations(GLGraphicsItem):
         self.mask, self.selected = np.asarray(mask, bool), selected
         self.update()
 
-    def _project(self, xyz):
-        """Project clean coordinates to screen pixels, rejecting behind-view points."""
-        matrix = np.asarray(self.mvpMatrix().data()).reshape(4, 4, order="F")
-        clip = np.column_stack((xyz, np.ones(len(xyz)))) @ matrix.T
-        visible = np.isfinite(clip).all(axis=1) & (clip[:, 3] > 0)
-        visible &= (abs(clip[:, :3]) <= clip[:, 3:]).all(axis=1)
-        ndc = clip[:, :2] / np.where(clip[:, 3:] != 0, clip[:, 3:], 1)
-        points = np.column_stack(
-            (
-                (ndc[:, 0] + 1) * self.view().width() / 2,
-                (1 - ndc[:, 1]) * self.view().height() / 2,
-            )
-        )
-        return points, visible
-
     def paint(self):
         """Draw outlined endpoint symbols and opaque label plates over the scene."""
         self.setupGLState()
@@ -49,7 +53,7 @@ class RouteAnnotations(GLGraphicsItem):
             QPainter.RenderHint.Antialiasing | QPainter.RenderHint.TextAntialiasing
         )
         try:
-            points, visible = self._project(self.endpoints.reshape(-1, 3))
+            points, visible = screen_points(self, self.endpoints.reshape(-1, 3))
             points, visible = points.reshape(-1, 2, 2), visible.reshape(-1, 2)
             # Selected flights' symbols are drawn last at a larger screen size.
             for i in sorted(
@@ -69,7 +73,7 @@ class RouteAnnotations(GLGraphicsItem):
                         painter.drawRect(rect)
                         painter.setPen(QPen(QColor("#ffffff"), 1.2))
                         painter.drawRect(rect)
-            anchors, visible = self._project(self.anchors)
+            anchors, visible = screen_points(self, self.anchors)
             painter.setFont(QFont("Helvetica", 11, QFont.Weight.Bold))
             for i, ((x, y), show) in enumerate(zip(anchors, visible, strict=True)):
                 if not show:
