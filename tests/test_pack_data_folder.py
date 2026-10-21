@@ -7,8 +7,6 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pyarrow as pa
-import pyarrow.parquet as pq
 import pytest
 
 from xc_viewer import route_index, thermal_index
@@ -83,10 +81,6 @@ def _thesis_archive(root):
         metadata=metadata,
         version=np.array(1),
     )
-    table = pa.table({"flight_id": ["1"]}).replace_schema_metadata(
-        {b"group_signature": b"old-group"}
-    )
-    pq.write_table(table, products / "group-flight-catalog.parquet")
     (products / ".prepare.lock").write_text("")
     return root
 
@@ -124,8 +118,6 @@ def test_pack_copies_reads_only_and_restamps_for_another_computer(
     with np.load(products / "route-thermal-duration-vilpellet.npz") as saved:
         density = json.loads(str(saved["metadata"]))["signature"]
     assert density != "old-density"
-    group = pq.read_schema(products / "group-flight-catalog.parquet").metadata
-    assert group[b"group_signature"] != b"old-group"
     manifest = json.loads((destination / "manifest.json").read_text())
     assert manifest["products"]["census"] == "ready"
 

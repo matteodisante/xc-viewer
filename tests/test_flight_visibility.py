@@ -6,46 +6,92 @@ import pytest
 
 from xc_viewer.route_scene import RouteScene
 
+T0 = 1700000000
+
+
+def _episode(tracks):
+    """Twelve members of one configuration, flying along their tracks in 1000 s."""
+    from xc_viewer.group_episodes import Episode, TimedTrack
+
+    members = pd.DataFrame(
+        {
+            "flight": np.arange(12),
+            "discipline": "paragliders",
+            "flight_id": [str(i) for i in range(12)],
+            "takeoff": float(T0),
+            "landing": T0 + 1000.0,
+        }
+    )
+    window = {"t_start": T0 + 100, "t_end": T0 + 900}
+    configurations = pd.DataFrame(
+        [{"conf_id": 0, "episode_id": 0, "n": 12, "members": list(range(12)), **window}]
+    )
+    row = pd.Series(
+        {
+            "episode_id": 0,
+            "date": "2023-11-14",
+            "n_flights": 12,
+            "n_max": 12,
+            "n_config": 1,
+            "distance_m": np.nan,
+            **window,
+        }
+    )
+    membership = pd.DataFrame(
+        {"flight": np.arange(12), "state": "G", "conf_id": 0, "episode_id": 0, **window}
+    )
+    pairs = pd.DataFrame(
+        {"a": np.arange(11), "b": np.arange(1, 12), "t_on": T0 + 100, "t_off": T0 + 900}
+    )
+    timed = {
+        f: TimedTrack(
+            [
+                np.column_stack([T0 + np.linspace(0, 1000, len(p)) * (k + 1) / 2, p])
+                for k, p in enumerate(t)
+            ]
+        )
+        for f, t in enumerate(tracks)
+    }
+    return Episode(
+        row, members, configurations, pairs, membership, pd.DataFrame([row]), timed
+    )
+
 
 @pytest.fixture(params=["routes", "groups"])
 def viewer(request, qapp):
-    from xc_viewer.widgets.group_scene import GroupScene
+    from xc_viewer.widgets.group_scene import EpisodeScene
     from xc_viewer.widgets.route_comparison import RouteComparison
 
-    groups = request.param == "groups"
-    view = GroupScene() if groups else RouteComparison()
-    population = pd.DataFrame(
-        {
-            "rank": np.arange(1, 13),
-            "discipline": "para",
-            "flight_id": [str(i) for i in range(12)],
-            "duration_s": 1000.0,
-            "speed_group": ["fast"] * 5 + ["other"] * 2 + ["slow"] * 5,
-            "departure_utc": 1700000000 + np.arange(12) * 60,
-            "arrival_utc": 1700001000 + np.arange(12) * 60,
-            "departure_delay_s": np.arange(12) * 60,
-            "path_km": 80.0,
-            "net_km": 100.0,
-            "gap_s": 10.0,
-            "clean_segments": 2,
-        }
-    )
-    scene = RouteScene(
-        population,
-        12,
-        (180, 1300) if groups else (90, 650, 100, 650),
+    tracks = [
         [
-            [
-                np.array([[a, i * 100, 1000], [b, i * 100, 2000]], np.float32)
-                for a, b in [(-50000, -10000), (10000, 50000)]
-            ]
-            for i in range(12)
-        ],
-        (900000, 6500000, 1010000, 6510000),
-        np.array([955000, 6505000]),
-        cell_m=5000 if groups else 10000,
-    )
-    view.set_scene(scene)
+            np.array([[a, i * 100, 1000], [b, i * 100, 2000]], np.float32)
+            for a, b in [(-50000, -10000), (10000, 50000)]
+        ]
+        for i in range(12)
+    ]
+    bounds, origin = (900000, 6500000, 1010000, 6510000), np.array([955000, 6505000])
+    if request.param == "groups":
+        view = EpisodeScene()
+        episode = _episode(tracks)
+        view.set_episode(
+            RouteScene(episode.members, 12, (), tracks, bounds, origin), episode
+        )
+    else:
+        view = RouteComparison()
+        population = pd.DataFrame(
+            {
+                "rank": np.arange(1, 13),
+                "discipline": "para",
+                "flight_id": [str(i) for i in range(12)],
+                "duration_s": 1000.0,
+                "speed_group": ["fast"] * 5 + ["other"] * 2 + ["slow"] * 5,
+                "departure_utc": T0 + np.arange(12) * 60,
+                "arrival_utc": T0 + 1000 + np.arange(12) * 60,
+            }
+        )
+        view.set_scene(
+            RouteScene(population, 12, (90, 650, 100, 650), tracks, bounds, origin)
+        )
     qapp.processEvents()  # Complete the group's initial deferred camera fit.
     yield view
     view.shutdown()

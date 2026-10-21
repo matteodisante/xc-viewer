@@ -6,6 +6,35 @@ FFVL contest archive (CFD). It shows single tracks with their flight phases
 thermals the pilots climbed: thermal planes over 5 km cells and regional thermal-time
 maps.
 
+## This branch: `feature/group-episodes`
+
+The **Group flights** tab is rebuilt on the groups found by the delayed-contact method of
+[xc-lab](https://github.com/matteodisante/xc-lab) (`ideas/group-identification`):
+
+- The tables are read from the `groups/` folder of the data folder, where xc-lab's
+  `export_viewer.py` copies one run with its `PARAMETERS.md`; **Group tables…** picks
+  another folder.
+- Episodes are ranked by distinct flights, largest configuration, duration or distance.
+- **Load episode** draws the members on the terrain of Routes; **Play** and the time
+  slider move them as numbered dots in the colour of their configuration, joined by
+  lines of the same colour when in contact; tracks take one colour per pilot, whole or
+  only up to the instant. Beside the scene, the contact graph of the instant; under it, the
+  **Timeline** of every member and the **Reeb graph** of the episode, live or whole.
+
+To launch this branch instead of `main` (the [requirements](#requirements) and the data
+folder are the same as below):
+
+```bash
+uvx --from git+https://github.com/matteodisante/xc-viewer@feature/group-episodes xc-viewer
+```
+
+From a clone of this repository:
+
+```bash
+git switch feature/group-episodes
+uv run xc-viewer
+```
+
 
 ## Project and development
 

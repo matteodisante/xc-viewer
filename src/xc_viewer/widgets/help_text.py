@@ -529,55 +529,78 @@ def locator_howto() -> str:
 
 
 def groups_info() -> str:
-    """What a launch group is and what the group scene shows."""
+    """What a group episode is and what its replay shows."""
     return f"""
-<p>Flights that took off from the same place at about the same time: pilots who may
-have flown together. Where they went, and how far, does not matter.</p>
+<p>Pilots who flew together, found from their tracks. Two pilots are in contact when
+one of them flies where the other was a few minutes before or after, close in position
+and in altitude. At each instant, a group is a set of pilots joined by contacts.</p>
 
-<h3>How groups are made</h3>
+<h3>Configurations and episodes</h3>
 <ul>
-<li>A flight's starting place is the cell (5 &times; 5 or 10 &times; 10 km) of its
-first cleaned fix.</li>
-<li>For each cell and each day, departures are put in time order. The first opens a
-<b>launch window</b> of the chosen length, and every flight starting within it joins
-its group. The first flight after the window opens the next one. With a 30-minute
-window, departures at 10:00 and 10:20 form a group, and 10:40 opens a new one.</li>
-<li>Each flight belongs to one group only. Groups smaller than <b>Minimum
-flights</b> are not listed.</li>
-<li>Cells are ranked by the number of flights in groups, by their largest group, or
-by their number of groups, over the chosen years and disciplines.</li>
+<li>A <b>configuration</b> is a fixed set of pilots that stays one group; it ends as
+soon as someone joins or leaves.</li>
+<li>An <b>episode</b> chains configurations without a break: each one starts when the
+previous one ends and keeps at least one of its pilots. A group that splits or merges
+stays in its episode; a group that dissolves ends it.</li>
+<li>Episodes can be ranked by distinct flights, by their largest configuration, by
+duration or by the distance covered.</li>
 </ul>
 
-<h3>Scene and table</h3>
+<h3>Scene, graphs and table</h3>
 <ul>
-<li>All members of the group are drawn, coloured from blue for the first to leave,
-through cyan, to lime for the last; selected rows turn white.</li>
-<li>Columns: start and end (French time); <b>Delay</b>, minutes after the group's
-first departure; elapsed time; <b>Path</b>, the horizontal distance flown;
-<b>Net</b>, the straight line from start to end; <b>Gaps</b>, the time without
-data; and the number of track pieces.</li>
-<li>The colours on the ground are the thermal hours per km&sup2; of all flights in the
-archive, as in Routes. They say nothing about the weather on the group's day.</li>
+<li>Lines are the cleaned tracks of the members, from 10 minutes before the episode
+to 10 minutes after it, one colour per pilot, faint before and after the episode (or
+yellow in the episode, if you prefer). Untick <b>Whole tracks</b> to draw each one only
+up to the chosen instant.</li>
+<li>Dots are the members at the chosen instant, each with its number and a bright trail
+of its last minutes. A large dot is in a configuration and takes its colour; a line in
+the same colour joins two pilots in contact. Two configurations in progress together
+never share a colour. A small grey dot flies alone; a white dot is in a configuration
+of another episode of the day, which these members join after leaving this one.</li>
+<li>Beside the scene, the <b>contact graph</b> at the chosen instant: one dot per
+member, numbered and coloured as in the scene, a line for each pair in contact. Members
+not in flight are faded.</li>
+<li>Under the slider: the configurations in progress, listed by member numbers, and the
+other episodes of the same day.</li>
+<li>The <b>Timeline</b> tab draws one row per member over the whole episode: pale before
+departure, grey when alone, in the colour of its configuration when in a group, and
+white in a configuration of another episode. Its white cursor is the chosen
+instant.</li>
+<li>The <b>Reeb graph</b> tab draws the episode as its configurations in time: one bar
+each, thicker with more members, its number of members above it. A white line joins a
+configuration to the next one that keeps some of its pilots, so splits, merges and
+pilots joining or leaving show as branches; dots mark starts and ends. <b>Live</b>
+draws it up to the chosen instant, <b>Whole episode</b> all of it.</li>
+<li>Columns: takeoff and landing in French time, the minutes spent in the episode, and
+the number of its configurations a member belongs to.</li>
+<li>The colours on the ground are the thermal hours per km&sup2; of all archived
+flights, as in Routes, not the weather of that day.</li>
 </ul>
-<p>Sharing a launch window does not prove that pilots flew together: compare their
-tracks. Exact rules: {_link("groups", "Launch groups")}.</p>
+<p>Exact definitions and thresholds: {_link("groups", "Group episodes")}.</p>
 """
 
 
 def groups_howto() -> str:
-    """How to find and load a launch group."""
+    """How to load and replay an episode."""
     return """
 <ol>
-<li>When the tab opens it reads the saved data, ranks the cells and loads the busiest
-group. <b>Prepare / refresh groups</b> is needed only when the status line asks for
-it: it reads the whole archive and can take a long time.</li>
-<li>Define the groups: <b>Departure cell</b> size, <b>Launch window</b> in minutes,
-<b>Minimum flights</b>, discipline and year. The ranking updates by itself.</li>
-<li>Choose <b>Rank cells by</b>, then a cell in the list next to it.</li>
-<li>Choose a <b>Launch group</b> and click <b>Load selected group</b>.</li>
-<li>In the scene, rotate, move and zoom as in Routes. Select rows to highlight their
-flights, untick rows to hide flights, or choose <b>Selected rows only</b>.</li>
-<li><b>Export group CSV</b> saves the table of the loaded group.</li>
+<li>The tables are read from the <code>groups/</code> folder of the data folder, where
+xc-lab exports them. To read another folder, click <b>Group tables…</b>; the viewer
+remembers it when the data folder has no <code>groups/</code>.</li>
+<li>If the status line asks for it, click <b>Prepare / refresh index</b> once: it
+builds the census of cleaned tracks that Routes uses too.</li>
+<li>Pick <b>Rank by</b>, a discipline, a year and <b>Minimum flights</b>; the list of
+episodes follows at once.</li>
+<li>Pick an <b>Episode</b> and click <b>Load episode</b>.</li>
+<li>Click <b>Play</b>, drag the slider, or drag the white cursor of the
+<b>Timeline</b> or <b>Reeb graph</b> tab. Set the replay speed and the trail length next
+to the slider.</li>
+<li>In the <b>Reeb graph</b> tab, pick <b>Live</b> to watch it grow with the replay, or
+<b>Whole episode</b>.</li>
+<li>In the <b>Timeline</b> tab, choose the colours of dots and tracks, whole tracks
+or only up to the instant, the numbers, and whether the camera follows the group.</li>
+<li>Rotate, move and zoom as in Routes. Select rows to highlight members, untick rows
+to hide them, or pick <b>Selected rows only</b>.</li>
 </ol>
 """
 

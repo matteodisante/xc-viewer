@@ -432,20 +432,34 @@ window is active.</li>
 def _groups() -> str:
     return f"""
 {_heading("groups")}
+<p>The tables are written by the group identification of the xc-lab repository from the
+cleaned archive and exported, with the <code>PARAMETERS.md</code> of their run, to the
+<code>groups/</code> folder of the data folder; this viewer only reads them. The
+thresholds of the loaded folder are printed above its ranking.</p>
 <ol>
-<li><b>Grid:</b> Lambert-93 cells over metropolitan France; destinations can lie
-outside it.</li>
-<li><b>Windows:</b> days are French calendar days, and a window includes its end.
-Windows never overlap or chain, a flight alone still uses up its window, and changing
-the window length can move later boundaries.</li>
-<li><b>Ranking:</b> a flight counts once, and only in groups of at least the minimum
-size. Flights without a known date take no part; their number is shown.</li>
-<li><b>Lengths and times:</b> <i>Path</i> adds up the horizontal Lambert-93 lengths of
-the edges between consecutive cleaned fixes, so gaps are excluded; <i>Gaps</i> is the
-elapsed time those edges do not cover; <i>Elapsed</i> runs from the first to the last
-cleaned fix, gaps included.</li>
-<li><b>Time:</b> comparisons use UTC, so daylight-saving changes do no harm; tables
-show French local time.</li>
+<li><b>Contact:</b> flights i and j are in contact at instant t when, at some instant
+t&prime; with |t&prime; &minus; t| &le; &delta;, one of them is within
+&epsilon;<sub>h</sub> horizontally and &epsilon;<sub>z</sub> in altitude of where the
+other is at t. When both glide, their headings must also differ by less than
+&theta;. Positions are compared on a common 5 s grid, from the departure (the first fix
+farther than 3 km from takeoff) to landing.</li>
+<li><b>Pair intervals:</b> runs of contact, joined across gaps shorter than g, cut to
+the time both flights are between departure and landing. Only runs of at least
+&tau;* count.</li>
+<li><b>Calibration of &tau;*:</b> the shortest duration at which chance explains at
+most a share q of the intervals, chance being measured on pairs whose second flight is
+shifted in time by more than 2&delta;.</li>
+<li><b>Configuration:</b> a set of flights that is a connected component of the graph
+of active pair intervals over a maximal interval of time.</li>
+<li><b>Episode:</b> configurations linked when one starts at the instant another ends
+and they share a flight, with their chains.</li>
+<li><b>Reeb graph:</b> the configurations of an episode as its edges, without the
+edges of single pilots (Buchin et al., 2015), so an episode is one connected piece. A
+configuration is drawn on the free lane nearest to those it continues, weighted by the
+pilots it keeps from each.</li>
+<li><b>Distance of an episode:</b> the longest straight line one member flew between
+entering and leaving a stretch of the episode.</li>
+<li><b>Time:</b> every comparison uses UTC; the tables show French local time.</li>
 </ol>
 {_back()}
 """

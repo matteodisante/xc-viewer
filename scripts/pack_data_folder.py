@@ -45,7 +45,6 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import numpy as np
-import pyarrow.parquet as pq
 
 from xc_viewer import datafolder
 from xc_viewer.core.disciplines import DISCIPLINES, HANG_GLIDERS, PARAGLIDERS
@@ -79,7 +78,7 @@ STAMPED_TABLES = {
 THESIS_PROBE = r"""
 import json
 from soaring.reporting.disciplines import DISCIPLINES
-from soaring.viewer import group_flights, route_density, route_index, thermal_index
+from soaring.viewer import route_density, route_index, thermal_index
 from soaring.viewer.thermal_activity import _validated_products
 from soaring.viewer.thermal_cache import segmentation_signature
 
@@ -101,7 +100,6 @@ probe = {
     "activity": attempt(lambda: _validated_products(census)[1]),
     "routes": attempt(lambda: route_index.archive_signature(archives)),
     "density": attempt(lambda: route_density.source_signature(archives)),
-    "group": attempt(lambda: group_flights._signature(routes)),
 }
 print("PROBE" + json.dumps(probe))
 """
@@ -276,21 +274,12 @@ def _stored(products: Path) -> dict:
     if density.is_file():
         with np.load(density, allow_pickle=False) as saved:
             stored["density"] = json.loads(str(saved["metadata"])).get("signature")
-    group = products / "group-flight-catalog.parquet"
-    if group.is_file():
-        meta = pq.read_schema(group).metadata or {}
-        stored["group"] = meta.get(b"group_signature", b"").decode() or None
     return stored
 
 
 def _new_fingerprints(disciplines) -> dict:
     """This repository's fingerprints of the copied archive."""
-    from xc_viewer import (
-        group_flights,
-        route_density,
-        route_index,
-        thermal_index,
-    )
+    from xc_viewer import route_density, route_index, thermal_index
     from xc_viewer.thermal_activity import _validated_products
     from xc_viewer.thermal_cache import segmentation_signature
 
@@ -308,10 +297,6 @@ def _new_fingerprints(disciplines) -> dict:
     archives = route_index.available_archives()
     new["routes"] = route_index.archive_signature(archives)
     new["density"] = route_density.source_signature(archives)
-    routes = route_index.RouteIndex(
-        route_index.route_cache_path(archives), tuple(archives), new["routes"]
-    )
-    new["group"] = group_flights._signature(routes)
     return new
 
 
@@ -358,19 +343,6 @@ def _restamp_npz(path: Path, mapping: dict) -> None:
     temporary = path.with_name(f".{path.name}.copying")
     with temporary.open("wb") as out:
         np.savez(out, **arrays)
-    temporary.replace(path)
-
-
-def _restamp_parquet(path: Path, mapping: dict) -> None:
-    """Rewrite a parquet file's schema metadata with the new fingerprint."""
-    table = pq.read_table(path)
-    metadata = dict(table.schema.metadata or {})
-    value = metadata.get(b"group_signature", b"").decode()
-    metadata[b"group_signature"] = mapping.get(value, value).encode()
-    temporary = path.with_name(f".{path.name}.copying")
-    pq.write_table(
-        table.replace_schema_metadata(metadata), temporary, compression="zstd"
-    )
     temporary.replace(path)
 
 
@@ -527,9 +499,6 @@ def main() -> int:
     density = products / "route-thermal-duration-vilpellet.npz"
     if density.is_file():
         _restamp_npz(density, mapping)
-    group = products / "group-flight-catalog.parquet"
-    if group.is_file():
-        _restamp_parquet(group, mapping)
 
     report = {
         k: "ready" if k in current else ("stale" if stored.get(k) else "absent")
