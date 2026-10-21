@@ -315,22 +315,15 @@ def test_reeb_graph_continues_lanes_through_splits_and_merges():
     assert links.values.tolist() == [[100, 0, 0], [100, 0, 1], [200, 0, 0], [200, 2, 0]]
 
 
-def test_tables_default_to_the_groups_folder_of_the_data_folder(
-    qapp, tmp_path, monkeypatch
-):
+def test_tables_are_the_groups_folder_of_the_data_folder(qapp, tmp_path, monkeypatch):
     from xc_viewer.core.disciplines import DATA_FOLDER_ENV
     from xc_viewer.widgets import group_flights as gf
 
-    class Settings:
-        def value(self, key, default):
-            return str(tmp_path / "chosen")
-
-    monkeypatch.setattr(gf, "QSettings", Settings)
     monkeypatch.setenv(DATA_FOLDER_ENV, str(tmp_path / "data"))
     (tmp_path / "data").mkdir()
-    assert gf.default_tables() == tmp_path / "chosen"  # no groups/: the last folder
+    assert gf.groups_folder() is None  # nothing exported yet
     write_tables(tmp_path / "data" / "groups")
-    assert gf.default_tables() == tmp_path / "data" / "groups"
+    assert gf.groups_folder() == tmp_path / "data" / "groups"
 
 
 def test_tab_ranks_the_episodes_of_the_chosen_tables(qapp, tmp_path):
@@ -341,7 +334,7 @@ def test_tab_ranks_the_episodes_of_the_chosen_tables(qapp, tmp_path):
         tab._tables = ge.load_tables(write_tables(tmp_path / "out"))
         tab._show_sources()
         assert tab._episodes.count() == 2 and tab._episodes.currentData() == 0
-        assert "89.5 min" in tab._sources and "89.5 min" in tab._choose.toolTip()
+        assert "89.5 min" in tab._sources
         assert not tab._load.isEnabled()  # no census of cleaned tracks yet
         tab._order.setCurrentIndex(tab._order.findData("duration"))
         assert tab._episodes.currentData() == 1

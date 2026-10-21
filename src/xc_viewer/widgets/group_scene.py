@@ -175,7 +175,7 @@ class EpisodeScene(RouteComparison):
             "per pilot, faint outside the episode · Bright trail: last minutes · "
             "○ ■ Start and end of the replay"
         )
-        self._placeholder.setText("Choose the folder of group tables, then an episode.")
+        self._placeholder.setText("Pick an episode and click Load episode.")
         self._summary.setText("")
         self._table.setColumnCount(7)
         self._table.setHorizontalHeaderLabels(

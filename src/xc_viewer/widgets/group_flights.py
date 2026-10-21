@@ -1,12 +1,8 @@
 """Rank the episodes of flying in a group and replay one on IGN terrain."""
 
-from pathlib import Path
-
 import numpy as np
-from PyQt6.QtCore import QSettings
 from PyQt6.QtWidgets import (
     QComboBox,
-    QFileDialog,
     QLabel,
     QPushButton,
     QSpinBox,
@@ -22,29 +18,26 @@ from .group_scene import EpisodeScene
 from .help import help_buttons
 from .route_comparison import _RouteWorker
 
-#: Key of the last folder of group tables, in the app's ``QSettings``.
-SETTINGS_KEY = "group_tables_folder"
-#: Folder of group tables inside the data folder, read by default.
+#: Folder of group tables inside the data folder.
 GROUPS = "groups"
 NO_TABLES = (
-    "The data folder has no groups/ folder: export one from xc-lab, or choose a folder "
-    "with Group tables…"
+    "The data folder has no group tables: export a run of xc-lab to its groups/ folder "
+    "with export_viewer.py."
 )
 #: Episodes listed after ranking.
 LISTED = 300
 
 
-def default_tables():
-    """The groups/ folder of the data folder if it has tables, else the last folder."""
+def groups_folder():
+    """The groups/ folder of the data folder, or None when it has no tables."""
     root = datafolder.current()
     if root is not None and (root / GROUPS / "episodes.parquet").is_file():
         return root / GROUPS
-    folder = QSettings().value(SETTINGS_KEY, "")
-    return Path(folder) if folder else None
+    return None
 
 
 class GroupFlights(QWidget):
-    """Folder of group tables, ranking of their episodes, and the replay of one."""
+    """The group tables of the data folder, their episodes ranked, one replayed."""
 
     def __init__(self, parent=None):
         """Create the controls; nothing is read before the tab is first shown."""
@@ -52,11 +45,6 @@ class GroupFlights(QWidget):
         self._worker = self._index = self._tables = None
         self._sources = ""
         self._tried = False
-        self._choose = QPushButton("Group tables…")
-        self._choose.setToolTip(
-            "The folder written by the group identification: flights, pair_intervals, "
-            "configurations, membership and episodes (.parquet)"
-        )
         self._prepare = QPushButton("Prepare / refresh index")
         self._prepare.setToolTip("The census of cleaned tracks shared with Routes")
         self._cancel = QPushButton("Cancel")
@@ -85,7 +73,6 @@ class GroupFlights(QWidget):
         self._viewer = EpisodeScene(self)
         top = FlowLayout()
         for widget in (
-            self._choose,
             self._prepare,
             self._cancel,
             self._info,
@@ -103,7 +90,6 @@ class GroupFlights(QWidget):
         layout.addLayout(top)
         layout.addWidget(self._viewer, 1)
         layout.addWidget(self._status)
-        self._choose.clicked.connect(self._choose_folder)
         self._prepare.clicked.connect(self._prepare_index)
         self._cancel.clicked.connect(self._cancel_work)
         self._load.clicked.connect(self._load_episode)
@@ -122,20 +108,11 @@ class GroupFlights(QWidget):
         if self._tried:
             return
         self._tried = True
-        self._read_sources(default_tables(), prepare=False)
-
-    def _choose_folder(self):
-        """Ask for the folder of group tables and remember it."""
-        start = QSettings().value(SETTINGS_KEY, "") or str(Path.home())
-        folder = QFileDialog.getExistingDirectory(self, "Folder of group tables", start)
-        if folder:
-            QSettings().setValue(SETTINGS_KEY, folder)
-            self._read_sources(Path(folder), prepare=False)
+        self._read_sources(groups_folder(), prepare=False)
 
     def _prepare_index(self):
         """Build the census of cleaned tracks, then read the tables again."""
-        folder = self._tables.folder if self._tables is not None else default_tables()
-        self._read_sources(folder, prepare=True)
+        self._read_sources(groups_folder(), prepare=True)
 
     def _read_sources(self, folder, *, prepare):
         def operation(**kw):
@@ -195,7 +172,6 @@ class GroupFlights(QWidget):
         for widget in (self._order, self._discipline, self._year, self._minimum):
             widget.setEnabled(not busy and self._tables is not None)
         self._episodes.setEnabled(not busy and self._episodes.count() > 0)
-        self._choose.setEnabled(not busy)
         self._prepare.setEnabled(not busy)
         self._cancel.setEnabled(busy)
         self._load.setEnabled(not busy and ready and self._episodes.count() > 0)
@@ -226,7 +202,6 @@ class GroupFlights(QWidget):
                 else ""
             )
         )
-        self._choose.setToolTip(f"{tables.folder}\n{self._sources}")
         distance = self._order.model().item(self._order.findData("distance"))
         distance.setEnabled(tables.has_distance)
         self._year.blockSignals(True)
