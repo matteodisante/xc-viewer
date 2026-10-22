@@ -214,6 +214,19 @@ def filter_flights(
     return result.reset_index(drop=True)
 
 
+def catalog_rows(discipline: Discipline, flight_ids) -> pd.DataFrame:
+    """The catalog rows of ``flight_ids`` (strings), one per flight.
+
+    Raises:
+        FileNotFoundError: If this discipline's ``catalog.csv`` is not reachable.
+    """
+    df = _load_catalog(discipline)
+    rows = df[df["flight_id"].isin([str(f) for f in flight_ids])]
+    return (
+        rows.drop(columns="_month").drop_duplicates("flight_id").reset_index(drop=True)
+    )
+
+
 def distinct_values(discipline: Discipline, column: str) -> list[str]:
     """Sorted distinct non-blank values of one catalog column, for filter dropdowns.
 

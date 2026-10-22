@@ -597,6 +597,8 @@ episodes follows at once.</li>
 to the slider.</li>
 <li>In the <b>Reeb graph</b> tab, pick <b>Live</b> to watch it grow with the replay, or
 <b>Whole episode</b>.</li>
+<li>Click <b>Who is who</b> for the pilot, flight ID, club, wing and sites of each
+member number; the window can stay open during the replay.</li>
 <li>In the <b>Timeline</b> tab, choose the colours of dots and tracks, whole tracks
 or only up to the instant, the numbers, and whether the camera follows the group.</li>
 <li>Rotate, move and zoom as in Routes. Select rows to highlight members, untick rows

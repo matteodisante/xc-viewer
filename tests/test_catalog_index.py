@@ -124,6 +124,12 @@ def test_filter_by_dept_year_month(discipline):
     assert result["flight_id"].tolist() == ["1"]
 
 
+def test_catalog_rows_by_flight_id(discipline):
+    result = catalog_index.catalog_rows(discipline, [3, "1", "99"])
+    assert sorted(result["flight_id"]) == ["1", "3"]
+    assert "_month" not in result.columns
+
+
 def test_filter_by_flight_type_and_wing_class(discipline):
     result = catalog_index.filter_flights(
         discipline, flight_type="Triangle", wing_class="A"

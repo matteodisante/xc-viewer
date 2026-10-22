@@ -19,6 +19,7 @@ The **Group flights** tab is rebuilt on the groups found by the delayed-contact 
   lines of the same colour when in contact; tracks take one colour per pilot, whole or
   only up to the instant. Beside the scene, the contact graph of the instant; under it, the
   **Timeline** of every member and the **Reeb graph** of the episode, live or whole.
+  **Who is who** lists the pilot, flight ID, club and wing behind each member number.
 
 To launch this branch instead of `main` (the [requirements](#requirements) and the data
 folder are the same as below):

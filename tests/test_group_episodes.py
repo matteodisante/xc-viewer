@@ -1,6 +1,7 @@
 """Group episodes: the tables of the group identification, their ranking and replay."""
 
 import json
+from types import SimpleNamespace
 
 import numpy as np
 import pandas as pd
@@ -140,6 +141,35 @@ def test_state_of_an_episode_at_every_instant(tmp_path):
     ]
 
 
+def test_members_are_identified_from_the_catalog(tmp_path, monkeypatch):
+    ep = ge.episode(ge.load_tables(write_tables(tmp_path / "out")), 0)
+    catalog = pd.DataFrame(
+        {
+            "flight_id": ["b", "a"],
+            "pilot": ["Bob", "Alice"],
+            "club": "C",
+            "wing": "W",
+            "takeoff": "Site",
+            "landing": "Field",
+            "distance_km": [51.0, 42.0],
+        }
+    )
+
+    def rows(disc, ids):
+        if disc.name == "hang gliders":
+            raise FileNotFoundError
+        return catalog[catalog.flight_id.isin(ids)]
+
+    monkeypatch.setattr(ge.catalog_index, "catalog_rows", rows)
+    para, hang = (SimpleNamespace(name=n) for n in ("paragliders", "hang gliders"))
+    members = ge.identify(ep.members, [para, hang])
+    assert members.flight.tolist() == [0, 1, 2]  # order kept
+    assert members.pilot.tolist()[:2] == ["Alice", "Bob"]
+    assert pd.isna(members.pilot[2])  # no catalog for hang gliders
+    assert members.takeoff.tolist() == ep.members.takeoff.tolist()  # UTC, not the site
+    assert members.takeoff_site.tolist()[:2] == ["Site", "Site"]
+
+
 def test_timed_track_interpolates_within_pieces_and_trails_end_at_the_instant():
     first = np.array([[0, 0, 0, 100], [10, 100, 0, 110], [20, 200, 0, 120]], float)
     second = np.array([[100, 0, 500, 300], [110, 0, 600, 300]], float)
@@ -201,10 +231,20 @@ def test_scene_colours_configurations_pilots_and_contacts(qapp, tmp_path):
     )
 
     scene, ep = replay(tmp_path)
+    ep.members["pilot"] = ["Alice", "$2A$07$FFVL0123", np.nan]
     view = EpisodeScene()
     try:
         view.set_episode(scene, ep)
         assert view._table.rowCount() == 3 and view._slider.isEnabled()
+        assert not view._lower.isHidden()  # Timeline, Reeb graph and Members tabs
+        view._who.click()
+        who = view._who_window.table
+        assert [who.item(k, 1).text() for k in range(3)] == [
+            "Alice",
+            "(anonymised)",
+            "",
+        ]
+        assert who.item(2, 2).text() == "c"
         assert view._annotations.anchors.shape == (0, 3)  # no cells to mark
         assert ep.inside[0] == [False, True, False]  # before, in and after the episode
         np.testing.assert_allclose(view._lines[0][1].color, _rgba(PILOTS[0], 0.9))
@@ -286,6 +326,7 @@ def test_scene_colours_configurations_pilots_and_contacts(qapp, tmp_path):
         assert not view._play.isChecked()  # and stops at the end
         view._clear_scene()
         assert view._markers is None and not view._slider.isEnabled()
+        assert who.rowCount() == 0 and view._lower.isHidden()
         view.seek(T0 + 1000)  # nothing to draw, nothing fails
     finally:
         view.shutdown()

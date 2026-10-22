@@ -10,14 +10,18 @@ from OpenGL import GL
 from PyQt6.QtCore import QRectF, Qt, QTimer
 from PyQt6.QtGui import QColor, QFont, QPainter, QVector3D
 from PyQt6.QtWidgets import (
+    QAbstractItemView,
     QCheckBox,
     QComboBox,
+    QDialog,
     QGraphicsRectItem,
     QHBoxLayout,
+    QHeaderView,
     QLabel,
     QPushButton,
     QSlider,
     QSpinBox,
+    QTableWidget,
     QTableWidgetItem,
     QTabWidget,
     QVBoxLayout,
@@ -25,6 +29,7 @@ from PyQt6.QtWidgets import (
 )
 from pyqtgraph.opengl.GLGraphicsItem import GLGraphicsItem
 
+from ..catalog_index import is_anonymised_pilot
 from ..group_episodes import reeb_graph
 from ..thermal_daily import PARIS
 from .flow_layout import FlowLayout
@@ -61,6 +66,19 @@ STEP_S = 5
 TICK_MS = 50
 #: Flight seconds between two rebuilds of the flown tracks; the trail covers the rest.
 FLOWN_STEP_S = 30
+#: Columns of the Who is who window: header and members column (None: the number).
+WHO = (
+    ("Member", None),
+    ("Pilot", "pilot"),
+    ("Flight ID", "flight_id"),
+    ("Club", "club"),
+    ("Wing", "wing"),
+    ("Takeoff site", "takeoff_site"),
+    ("Takeoff (Paris)", "takeoff"),
+    ("Landing site", "landing_site"),
+    ("Landing (Paris)", "landing"),
+    ("CFD distance (km)", "distance_km"),
+)
 
 
 def _rgba(colour, alpha=1.0):
@@ -92,6 +110,50 @@ def _conf_colours(configurations):
         out[int(c.conf_id)] = PALETTE[pick]
         turn = pick + 1
     return out
+
+
+def _who_text(column, value):
+    """One cell of the Who is who window; empty where the catalog has no value."""
+    if column in ("takeoff", "landing"):
+        return _flight_datetime(value)
+    if value is None or (isinstance(value, float) and not np.isfinite(value)):
+        return ""
+    if column == "pilot" and is_anonymised_pilot(str(value)):
+        return "(anonymised)"
+    if column == "distance_km":
+        return f"{float(value):.0f}"
+    return str(value)
+
+
+class _WhoIsWho(QDialog):
+    """Which flight and which pilot each member number is."""
+
+    def __init__(self, parent):
+        """An empty table until `set_members`."""
+        super().__init__(parent)
+        self.setWindowTitle("Who is who")
+        self.resize(1100, 260)
+        self.table = QTableWidget(0, len(WHO))
+        self.table.setHorizontalHeaderLabels([header for header, _ in WHO])
+        self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.table.verticalHeader().hide()
+        self.table.horizontalHeader().setSectionResizeMode(
+            QHeaderView.ResizeMode.ResizeToContents
+        )
+        QVBoxLayout(self).addWidget(self.table)
+
+    def set_members(self, members):
+        """One row per member, its number in the colour of the pilot."""
+        self.table.setRowCount(len(members))
+        for i, row in enumerate(members.to_dict("records")):
+            for col, (_, column) in enumerate(WHO):
+                if column is None:
+                    item = QTableWidgetItem(str(i + 1))
+                    item.setBackground(QColor(PILOTS[i % len(PILOTS)]))
+                    item.setForeground(QColor("#061725"))
+                else:
+                    item = QTableWidgetItem(_who_text(column, row.get(column)))
+                self.table.setItem(i, col, item)
 
 
 class _Numbers(GLGraphicsItem):
@@ -206,6 +268,9 @@ class EpisodeScene(RouteComparison):
         self._trail.setRange(0, 60)
         self._trail.setValue(5)
         self._trail.setSuffix(" min trail")
+        self._who = QPushButton("Who is who")
+        self._who.setToolTip("Which flight, pilot, club and wing each member number is")
+        self._who_window = None
         self._now_text = QLabel()
         self._now_text.setWordWrap(True)
         timeline = QHBoxLayout()
@@ -215,6 +280,7 @@ class EpisodeScene(RouteComparison):
             (self._clock, 0),
             (self._speed, 0),
             (self._trail, 0),
+            (self._who, 0),
         ):
             timeline.addWidget(widget, stretch)
         at = self._layout.indexOf(self._flight_splitter) + 1
@@ -229,6 +295,7 @@ class EpisodeScene(RouteComparison):
         self._play.toggled.connect(self._toggle_play)
         self._slider.valueChanged.connect(self._slid)
         self._trail.valueChanged.connect(lambda _: self._redraw())
+        self._who.clicked.connect(self._show_who)
         self._set_timeline_enabled(False)
 
     def _build_timeline(self):
@@ -409,6 +476,8 @@ class EpisodeScene(RouteComparison):
         self._slider.setRange(0, int((high - low) // STEP_S))
         self._slider.blockSignals(False)
         self._set_timeline_enabled(True)
+        if self._who_window is not None:
+            self._who_window.set_members(episode.members)
         self.seek(float(episode.row.t_start))
 
     @staticmethod
@@ -525,6 +594,9 @@ class EpisodeScene(RouteComparison):
                 item.setData([], [])
             self._graph_nodes.setData([])
             self._graph.setTitle("")
+            self._lower.hide()
+            if self._who_window is not None:
+                self._who_window.table.setRowCount(0)
         self._markers = self._numbers_item = self._reeb_data = None
         self._edges, self._trails, self._flown = {}, [], []
         super()._clear_scene()
@@ -536,10 +608,19 @@ class EpisodeScene(RouteComparison):
             self._slider,
             self._speed,
             self._trail,
+            self._who,
             self._strip,
             self._reeb,
         ):
             widget.setEnabled(enabled)
+
+    def _show_who(self):
+        """Open the Who is who window on the members of the episode."""
+        if self._who_window is None:
+            self._who_window = _WhoIsWho(self)
+        self._who_window.set_members(self._episode.members)
+        self._who_window.show()
+        self._who_window.raise_()
 
     # -- the instant ---------------------------------------------------------------
 
@@ -799,6 +880,7 @@ class EpisodeScene(RouteComparison):
                 self._table.setItem(i, col, item)
         self._table.blockSignals(False)
         self._table.show()
+        self._lower.show()  # replaceWidget gave it the hidden state of the table
 
     def _set_scene_summary(self, scene):
         """Identify the episode."""
@@ -857,4 +939,6 @@ class EpisodeScene(RouteComparison):
     def shutdown(self):
         """Stop the replay before the shared OpenGL view goes."""
         self._timer.stop()
+        if self._who_window is not None:
+            self._who_window.close()
         super().shutdown()

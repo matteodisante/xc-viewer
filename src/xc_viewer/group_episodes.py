@@ -18,6 +18,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+from . import catalog_index
 from .core.preproc.enu import LocalFrame
 from .geodesy import enu_to_geodetic
 from .route_index import FIX_COLUMNS
@@ -42,6 +43,15 @@ SORT_KEYS = {
 }
 #: Replay starts and ends this long before and after the episode.
 MARGIN_S = 600
+#: Catalog columns that say who flew a member, and their names in the members table.
+IDENTITY = {
+    "pilot": "pilot",
+    "club": "club",
+    "wing": "wing",
+    "takeoff": "takeoff_site",
+    "landing": "landing_site",
+    "distance_km": "distance_km",
+}
 
 
 @dataclass(frozen=True)
@@ -274,6 +284,29 @@ def episode(tables, episode_id):
     return Episode(row, flights, configurations, pairs, membership, day)
 
 
+def identify(members, disciplines):
+    """The members with the IDENTITY columns of the catalog.
+
+    NaN where the catalog is unreachable or has no row.
+    """
+    found = []
+    for disc in disciplines:
+        ids = members.loc[members.discipline == disc.name, "flight_id"]
+        try:
+            rows = catalog_index.catalog_rows(disc, ids)
+        except FileNotFoundError:
+            continue
+        found.append(rows[["flight_id", *IDENTITY]].assign(discipline=disc.name))
+    found = (
+        pd.concat(found)
+        if found
+        else pd.DataFrame(columns=["flight_id", *IDENTITY, "discipline"])
+    )
+    found = found.rename(columns=IDENTITY).rename(columns={"flight_id": "_id"})
+    out = members.assign(_id=members.flight_id.astype(str))
+    return out.merge(found, on=["discipline", "_id"], how="left").drop(columns="_id")
+
+
 def read_timed_tracks(index, members, *, progress=lambda _: None, cancel=None):
     """Cleaned tracks of the members in Lambert-93 with UTC times, split at gaps."""
     index.verify()
@@ -324,6 +357,8 @@ def load_episode_scene(
 ):
     """The episode and its members' tracks in its window, on their terrain."""
     ep = episode(tables, episode_id)
+    progress("Reading the catalog for the members…")
+    ep.members = identify(ep.members, index.disciplines)
     progress("Reading the cleaned tracks of the members…")
     tracks = read_timed_tracks(index, ep.members, progress=progress, cancel=cancel)
     low, high = ep.window
