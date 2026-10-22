@@ -36,7 +36,7 @@ from ..route_index import (
     load_saved_index,
     route_pairs,
 )
-from ..route_scene import load_scene, terrain_mesh
+from ..route_scene import DETAIL_SIDE_M, load_scene, terrain_colours, terrain_mesh
 from ..thermal_daily import PARIS
 from ..thermal_geometry import unproject
 from ..thermal_index import CancelledError
@@ -45,6 +45,7 @@ from .flow_layout import FlowLayout
 from .help import help_buttons
 from .route_density import RouteDensity
 from .route_locator import RouteLocator
+from .terrain_detail import TerrainDetail
 
 COLOURS = {"fast": "#00e5ff", "slow": "#7cff32", "other": "#edf6ff", "both": "#65aaff"}
 SELECTED_COLOUR = "#1464ff"
@@ -223,6 +224,8 @@ class RouteComparison(QWidget):
         )
         self._placeholder.setWordWrap(True)
         self._density = RouteDensity(self)
+        self._detail = TerrainDetail(self)
+        self._detail.patched.connect(self._detail_patched)
         self._locator = RouteLocator(self)
         self._scene_panel = QWidget(self)
         self._scene_layout = QHBoxLayout(self._scene_panel)
@@ -449,6 +452,7 @@ class RouteComparison(QWidget):
             worker.wait()
             worker.deleteLater()
         self._pending_scene = False
+        self._detail.clear()
         self._density.clear()
         self._locator.shutdown()
         self._release_texture()
@@ -569,6 +573,7 @@ class RouteComparison(QWidget):
 
     def _clear_scene(self):
         """Avoid retaining an old cohort under a newly selected route label."""
+        self._detail.clear()
         self._density.clear()
         self._locator.set_scene(None)
         self._release_texture()
@@ -616,8 +621,6 @@ class RouteComparison(QWidget):
 
     def set_scene(self, scene):
         """Upload cleaned segments and a terrain mesh; never bridge data gaps."""
-        from matplotlib import colormaps
-        from matplotlib.colors import LightSource
         from scipy.interpolate import RegularGridInterpolator
 
         from .route_annotations import RouteAnnotations
@@ -638,19 +641,9 @@ class RouteComparison(QWidget):
         self._scene_items = []
         if scene.terrain is not None:
             vertices, faces = terrain_mesh(scene.terrain, scene.origin)
-            z = scene.terrain[2]
-            ref = scene.terrain[3]
-            heights = np.nan_to_num(z, nan=float(np.nanmedian(z)))
-            colours = colormaps["terrain"](0.25 + 0.65 * np.clip(heights / 4500, 0, 1))
-            light = LightSource(azdeg=315, altdeg=45).hillshade(
-                heights, dx=ref["grid_m"][0], dy=ref["grid_m"][1]
+            colours, gray = terrain_colours(
+                scene.terrain[2], scene.terrain[3]["grid_m"]
             )
-            colours[:, :, :3] = (0.65 * colours[:, :, :3] + 0.35) * (
-                0.55 + 0.45 * light[:, :, None]
-            )
-            colours = colours.reshape(-1, 4).astype(np.float32)
-            gray = np.ones_like(colours)
-            gray[:, :3] = (0.4 + 0.55 * light.ravel())[:, None]
             self._terrain_colours = (colours, gray)
             self._surface = DrapedTerrain(
                 image=scene.aerial,
@@ -668,6 +661,8 @@ class RouteComparison(QWidget):
         self._surface_mode.setEnabled(self._surface is not None)
         self._surface_mode.model().item(1).setEnabled(scene.aerial is not None)
         self._density.attach(scene, self._view, self._surface)
+        if self._surface is not None:
+            self._detail.attach(scene, self._view, self._surface)
         self._locator.set_scene(scene)
         if scene.aerial is None and self._surface_mode.currentIndex() == 1:
             self._surface_mode.setCurrentIndex(0)
@@ -851,7 +846,21 @@ class RouteComparison(QWidget):
                 f"{ref['grid_m'][0]:.0f} x {ref['grid_m'][1]:.0f} m/pixel. "
                 "Mosaic acquisition dates vary and differ from flight dates."
             )
+        patch = self._detail.patch
+        if patch is not None:
+            photo = patch.aerial_reference["grid_m"][0]
+            dem = patch.terrain_reference["grid_m"][0]
+            source += (
+                f" Around the view centre, a {DETAIL_SIDE_M / 1000:.0f} km square of "
+                f"finer IGN data: DEM {dem:.0f} m"
+                + (f", aerial {photo:.1f} m/pixel." if aerial else ".")
+            )
         self._source.setText(source)
+
+    def _detail_patched(self, patch):
+        """Keep the colour modes and the source line in step with the patched mesh."""
+        self._terrain_colours = (patch.colours, patch.gray)
+        self._surface_changed()
 
     def _release_texture(self):
         """Free the previous orthophoto while its OpenGL context still exists."""

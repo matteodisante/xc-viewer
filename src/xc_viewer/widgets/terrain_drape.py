@@ -16,9 +16,10 @@ class _DrapeShader(ShaderProgram):
     """Extend pyqtgraph's float-only uniform setter with a second texture sampler."""
 
     def __enter__(self):
-        """Bind the density sampler to texture unit one after the float uniforms."""
+        """Bind the density and detail samplers to texture units one and two."""
         super().__enter__()
         GL.glUniform1i(self.uniform("u_density"), 1)
+        GL.glUniform1i(self.uniform("u_detail"), 2)
 
 
 DRAPE_SHADER = _DrapeShader(
@@ -28,11 +29,13 @@ DRAPE_SHADER = _DrapeShader(
         uniform mat4 u_mvp;
         uniform float u_bounds[4];
         uniform float u_density_bounds[4];
+        uniform float u_detail_bounds[4];
         in vec4 a_position;
         in vec4 a_color;
         out vec4 v_color;
         out vec2 v_photo;
         out vec2 v_density;
+        out vec2 v_detail;
         void main() {
             gl_Position = u_mvp * a_position;
             v_color = a_color;
@@ -42,21 +45,32 @@ DRAPE_SHADER = _DrapeShader(
             v_density = vec2(
                 (a_position.x-u_density_bounds[0])/(u_density_bounds[2]-u_density_bounds[0]),
                 (u_density_bounds[3]-a_position.y)/(u_density_bounds[3]-u_density_bounds[1]));
+            v_detail = vec2(
+                (a_position.x-u_detail_bounds[0])/(u_detail_bounds[2]-u_detail_bounds[0]),
+                (u_detail_bounds[3]-a_position.y)/(u_detail_bounds[3]-u_detail_bounds[1]));
         }
     """),
         FragmentShader("""#version 140
         uniform sampler2D u_texture;
         uniform sampler2D u_density;
+        uniform sampler2D u_detail;
         uniform float u_photo;
+        uniform float u_has_detail;
         uniform float u_terrain;
         uniform float u_density_opacity;
         in vec4 v_color;
         in vec2 v_photo;
         in vec2 v_density;
+        in vec2 v_detail;
         out vec4 fragColor;
         void main() {
             vec4 base = v_color;
-            if (u_photo > 0.5) base = texture(u_texture, v_photo);
+            if (u_photo > 0.5) {
+                bool inside = all(greaterThanEqual(v_detail, vec2(0.0)))
+                    && all(lessThanEqual(v_detail, vec2(1.0)));
+                base = u_has_detail > 0.5 && inside
+                    ? texture(u_detail, v_detail) : texture(u_texture, v_photo);
+            }
             base.a *= u_terrain;
             vec4 heat = vec4(0.0);
             if (u_density_opacity > 0.0) {
@@ -80,8 +94,9 @@ class DrapedTerrain(TerrainMesh):
         """Keep density pixels separate from imagery but render a single surface."""
         super().__init__(**kwargs)
         self._density_image = self._density_texture = None
+        self._detail_image = self._detail_texture = None
         self._empty_texture = None
-        self._density_bounds = self._bounds
+        self._density_bounds = self._detail_bounds = self._bounds
         self.density_opacity = 0.75
         self.density_visible = True
         self.terrain_visible = True
@@ -100,9 +115,16 @@ class DrapedTerrain(TerrainMesh):
             self._density_texture.destroy()
             self._density_texture = None
 
+    def release_detail(self):
+        """Destroy only the detail photo texture with the view context current."""
+        if self._detail_texture is not None:
+            self._detail_texture.destroy()
+            self._detail_texture = None
+
     def release_texture(self):
-        """Release both textures when the scene is replaced or closed."""
+        """Release every texture when the scene is replaced or closed."""
         self.release_density()
+        self.release_detail()
         if self._empty_texture is not None:
             self._empty_texture.destroy()
             self._empty_texture = None
@@ -113,6 +135,15 @@ class DrapedTerrain(TerrainMesh):
         self._density_image = image
         self._density_bounds = list(bounds)
         self._visibility()
+
+    def set_detail(self, image, bounds):
+        """Install a finer photo of ``bounds``; the overview photo stays outside.
+
+        The caller has released the previous texture first.
+        """
+        self._detail_image = image
+        self._detail_bounds = list(bounds)
+        self.update()
 
     def set_density_visible(self, visible):
         """Hide thermal colour independently of the underlying terrain."""
@@ -133,15 +164,18 @@ class DrapedTerrain(TerrainMesh):
         self.update()
 
     def paint(self):
-        """Blend both georeferenced layers before depth-testing the single surface."""
+        """Blend the georeferenced layers before depth-testing the single surface."""
         density = self.density_visible and self._density_image is not None
+        detail = self._aerial and self._detail_image is not None
         DRAPE_SHADER["u_bounds"] = self._bounds
         DRAPE_SHADER["u_density_bounds"] = self._density_bounds
+        DRAPE_SHADER["u_detail_bounds"] = self._detail_bounds
         DRAPE_SHADER["u_photo"] = [float(self._aerial)]
+        DRAPE_SHADER["u_has_detail"] = [float(detail)]
         DRAPE_SHADER["u_terrain"] = [float(self.terrain_visible)]
         DRAPE_SHADER["u_density_opacity"] = [self.density_opacity if density else 0.0]
         GL.glActiveTexture(GL.GL_TEXTURE0)
-        if (not self._aerial or not density) and self._empty_texture is None:
+        if self._empty_texture is None:
             self._empty_texture = upload_image(np.zeros((1, 1, 4), dtype=np.uint8))
         if self._aerial and self._texture is None:
             self._upload_texture()
@@ -152,9 +186,16 @@ class DrapedTerrain(TerrainMesh):
             self._density_texture = upload_image(self._density_image)
         density_texture = self._density_texture if density else self._empty_texture
         density_texture.bind()
+        GL.glActiveTexture(GL.GL_TEXTURE2)
+        if detail and self._detail_texture is None:
+            self._detail_texture = upload_image(self._detail_image)
+        detail_texture = self._detail_texture if detail else self._empty_texture
+        detail_texture.bind()
         try:
             gl.GLMeshItem.paint(self)
         finally:
+            GL.glActiveTexture(GL.GL_TEXTURE2)
+            detail_texture.release()
             GL.glActiveTexture(GL.GL_TEXTURE1)
             density_texture.release()
             GL.glActiveTexture(GL.GL_TEXTURE0)

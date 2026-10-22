@@ -7,6 +7,7 @@ import io
 import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from urllib.parse import urlencode
 from urllib.request import urlopen
 from uuid import uuid4
@@ -29,6 +30,12 @@ from .thermal_ridges import DATASET_URL, LAYER, SERVICE
 AERIAL_LAYER = "ORTHOIMAGERY.ORTHOPHOTOS"
 AERIAL_DATASET_URL = "https://www.data.gouv.fr/datasets/bd-ortho-r"
 AERIAL_MAX_SIDE = 3072
+#: Side of the square of finer terrain around the centre of the view, m.
+DETAIL_SIDE_M = 20_000
+#: Pixels of its aerial photo per side (the service allows 5010).
+DETAIL_PIXELS = 4096
+#: Finest DEM sampling of the square, m.
+DETAIL_STEP_M = 25
 
 
 @dataclass
@@ -51,6 +58,23 @@ class RouteScene:
     departure_cohort: pd.DataFrame | None = None
     departure_window: DepartureWindow | None = None
     cell_m: float = ROUTE_CELL_M
+    #: Cache of the IGN responses; None when the terrain was not downloaded.
+    terrain_folder: Path | None = None
+
+
+@dataclass
+class TerrainPatch:
+    """The overview mesh with a square of finer DEM and its aerial photo."""
+
+    window: tuple
+    vertices: np.ndarray
+    faces: np.ndarray
+    colours: np.ndarray
+    gray: np.ndarray
+    photo: np.ndarray
+    bounds: np.ndarray
+    terrain_reference: dict
+    aerial_reference: dict
 
 
 def track_segments(fixes, frame):
@@ -78,10 +102,10 @@ def scene_bounds(tracks, pair, cell_m=ROUTE_CELL_M):
     return (*np.floor(low / 1000) * 1000, *np.ceil(high / 1000) * 1000)
 
 
-def terrain_request(bounds):
-    """Limit the overview DEM to 600 pixels per side, sampled at >=100 m."""
+def terrain_request(bounds, min_step=100):
+    """Limit the DEM to 600 pixels per side, sampled at >= min_step m."""
     west, south, east, north = bounds
-    step = max(100, (east - west) / 600, (north - south) / 600)
+    step = max(min_step, (east - west) / 600, (north - south) / 600)
     width, height = (
         max(2, int(np.ceil((east - west) / step))),
         max(2, int(np.ceil((north - south) / step))),
@@ -122,14 +146,14 @@ def decode_terrain(raw, bounds, size):
     return x, y, np.pad(z, 1, mode="edge"), (dx, dy), float(valid.mean())
 
 
-def load_terrain(bounds, folder, *, cancel=None):
+def load_terrain(bounds, folder, *, cancel=None, min_step=100):
     """Download one small official DEM window, then reuse its verified cache.
 
     A single response is at most 600 x 600 floats. A 30 s network timeout keeps
     cancellation and application shutdown bounded. Missing coverage stays absent;
     no flight altitude is altered to force it above the ground.
     """
-    url, size = terrain_request(bounds)
+    url, size = terrain_request(bounds, min_step)
     key = hashlib.sha256(url.encode()).hexdigest()[:24]
     path = folder / f"ign-route-{key}.npz"
     _check_cancel(cancel)
@@ -172,12 +196,16 @@ def load_terrain(bounds, folder, *, cancel=None):
     return x, y, z, {**reference, "grid_m": grid, "coverage": coverage}
 
 
-def aerial_request(bounds):
-    """Request one north-up overview orthophoto over exactly the DEM bounds."""
+def aerial_request(bounds, max_side=None):
+    """Request one north-up orthophoto over exactly the DEM bounds.
+
+    Its longer side has ``max_side`` pixels, AERIAL_MAX_SIDE by default.
+    """
+    max_side = max_side or AERIAL_MAX_SIDE
     west, south, east, north = bounds
-    step = max(east - west, north - south) / AERIAL_MAX_SIDE
+    step = max(east - west, north - south) / max_side
     size = tuple(
-        max(2, min(AERIAL_MAX_SIDE, round(span / step)))
+        max(2, min(max_side, round(span / step)))
         for span in (east - west, north - south)
     )
     params = {
@@ -203,9 +231,9 @@ def decode_aerial(raw, size):
         return np.asarray(image.convert("RGB")).copy()
 
 
-def load_aerial(bounds, folder, *, cancel=None):
+def load_aerial(bounds, folder, *, cancel=None, max_side=None):
     """Cache a verified aerial mosaic without downloading native-resolution tiles."""
-    url, size = aerial_request(bounds)
+    url, size = aerial_request(bounds, max_side)
     key = hashlib.sha256(url.encode()).hexdigest()[:24]
     path = folder / f"ign-aerial-{key}.npz"
     _check_cancel(cancel)
@@ -391,23 +419,117 @@ def load_background(scene, index, *, progress=lambda _: None, cancel=None):
             )
         except (OSError, ValueError) as exc:
             scene.aerial_error = str(exc)
+        scene.terrain_folder = index.path.parent / "route-terrain"
     _check_cancel(cancel)
     return scene
 
 
-def terrain_mesh(terrain, origin):
-    """Return only triangles with three valid DEM vertices; never fill holes."""
+def terrain_mesh(terrain, origin, hole=None):
+    """Return only triangles with three valid DEM vertices; never fill holes.
+
+    ``hole`` (i0, i1, j0, j1) leaves out the cells between those vertex columns and
+    rows, where a finer patch goes.
+    """
     x, y, z, _ = terrain
     xx, yy = np.meshgrid(x - origin[0], y - origin[1])
     vertices = np.column_stack((xx.ravel(), yy.ravel(), z.ravel())).astype(np.float32)
     ids = np.arange(z.size).reshape(z.shape)
+    keep = np.ones((z.shape[0] - 1, z.shape[1] - 1), bool)
+    if hole is not None:
+        i0, i1, j0, j1 = hole
+        keep[j0:j1, i0:i1] = False
     a, b, c, d = (
-        ids[:-1, :-1].ravel(),
-        ids[:-1, 1:].ravel(),
-        ids[1:, :-1].ravel(),
-        ids[1:, 1:].ravel(),
+        ids[:-1, :-1][keep],
+        ids[:-1, 1:][keep],
+        ids[1:, :-1][keep],
+        ids[1:, 1:][keep],
     )
     faces = np.concatenate((np.column_stack((a, b, c)), np.column_stack((b, d, c))))
     faces = faces[np.isfinite(vertices[faces, 2]).all(axis=1)]
     vertices[~np.isfinite(vertices[:, 2]), 2] = 0
     return vertices, faces
+
+
+def terrain_colours(z, grid_m):
+    """Hill-shaded elevation colours and grey shading, one RGBA row per DEM vertex."""
+    from matplotlib import colormaps
+    from matplotlib.colors import LightSource
+
+    heights = np.nan_to_num(z, nan=float(np.nanmedian(z)))
+    colours = colormaps["terrain"](0.25 + 0.65 * np.clip(heights / 4500, 0, 1))
+    light = LightSource(azdeg=315, altdeg=45).hillshade(
+        heights, dx=grid_m[0], dy=grid_m[1]
+    )
+    colours[:, :, :3] = (0.65 * colours[:, :, :3] + 0.35) * (
+        0.55 + 0.45 * light[:, :, None]
+    )
+    colours = colours.reshape(-1, 4).astype(np.float32)
+    gray = np.ones_like(colours)
+    gray[:, :3] = (0.4 + 0.55 * light.ravel())[:, None]
+    return colours, gray
+
+
+def detail_window(terrain, centre, side=DETAIL_SIDE_M):
+    """The square of about ``side`` m around ``centre`` (Lambert-93 east, north).
+
+    Its centre snaps to multiples of side / 2, so small moves keep the same square,
+    and its edges to the vertex lines of the overview DEM. Returns the vertex columns
+    i0 < i1 and rows j0 < j1, or None when less than two cells remain inside it.
+    """
+    x, y = terrain[:2]
+    half = side / 2
+    out = []
+    for grid, c in ((x, centre[0]), (y, centre[1])):
+        snapped = round(c / half) * half
+        low = int(np.abs(grid - (snapped - half)).argmin())
+        high = int(np.abs(grid - (snapped + half)).argmin())
+        if high - low < 2:
+            return None
+        out += [low, high]
+    return tuple(out)
+
+
+def stitch(terrain, detail, window):
+    """Give the border of the detail DEM the heights of the overview edges it meets.
+
+    The overview triangles around the window have those edges, so the two meshes
+    join without cracks.
+    """
+    i0, i1, j0, j1 = window
+    x, y, z, _ = terrain
+    dx, dy, dz, reference = detail
+    dz = dz.copy()
+    dz[:, 0] = np.interp(dy, y[j0 : j1 + 1], z[j0 : j1 + 1, i0])
+    dz[:, -1] = np.interp(dy, y[j0 : j1 + 1], z[j0 : j1 + 1, i1])
+    dz[0] = np.interp(dx, x[i0 : i1 + 1], z[j0, i0 : i1 + 1])
+    dz[-1] = np.interp(dx, x[i0 : i1 + 1], z[j1, i0 : i1 + 1])
+    return dx, dy, dz, reference
+
+
+def load_detail(terrain, window, origin, folder):
+    """The overview mesh with the finer DEM and photo of ``window``, as a TerrainPatch.
+
+    Both responses are cached in ``folder`` like the overview's.
+    """
+    i0, i1, j0, j1 = window
+    x, y = terrain[:2]
+    bounds = (float(x[i0]), float(y[j0]), float(x[i1]), float(y[j1]))
+    detail = stitch(
+        terrain, load_terrain(bounds, folder, min_step=DETAIL_STEP_M), window
+    )
+    photo, aerial_reference = load_aerial(bounds, folder, max_side=DETAIL_PIXELS)
+    v0, f0 = terrain_mesh(terrain, origin, hole=window)
+    v1, f1 = terrain_mesh(detail, origin)
+    c0, g0 = terrain_colours(terrain[2], terrain[3]["grid_m"])
+    c1, g1 = terrain_colours(detail[2], detail[3]["grid_m"])
+    return TerrainPatch(
+        window,
+        np.vstack([v0, v1]),
+        np.vstack([f0, f1 + len(v0)]),
+        np.vstack([c0, c1]),
+        np.vstack([g0, g1]),
+        photo,
+        np.asarray(bounds) - np.tile(origin, 2),
+        detail[3],
+        aerial_reference,
+    )

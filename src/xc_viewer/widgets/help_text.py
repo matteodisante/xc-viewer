@@ -489,7 +489,9 @@ all flights</b> do every row at once. Select rows to highlight their flights.</l
 <li>Drag the bar above the table up for more rows, or down for a bigger scene.</li>
 <li>Appearance: <b>Track width</b>; <b>IGN terrain</b> on or off and its surface
 (elevation colours, aerial photo, grey relief); <b>Vertical exaggeration</b> makes
-heights look taller, without changing any value.</li>
+heights look taller, without changing any value. Zoom in on a large scene and, after
+a few seconds, a 20 km square around the centre of the view sharpens: terrain every
+33 m and aerial photo at 5 m per pixel, kept on disk for the next time.</li>
 <li>Thermal colours: tick <b>Thermal hours &middot; all flights</b>, then choose the
 pixel size and the opacity.</li>
 <li>Flights that started together: tick <b>Departure window</b>, choose the day, the
@@ -595,10 +597,10 @@ episodes follows at once.</li>
 <li>Click <b>Play</b>, drag the slider, or drag the white cursor of the
 <b>Timeline</b> or <b>Reeb graph</b> tab. Set the replay speed and the trail length next
 to the slider.</li>
-<li>In the <b>Reeb graph</b> tab, pick <b>Live</b> to watch it grow with the replay, or
-<b>Whole episode</b>.</li>
 <li>Click <b>Who is who</b> for the pilot, flight ID, club, wing and sites of each
 member number; the window can stay open during the replay.</li>
+<li>In the <b>Reeb graph</b> tab, pick <b>Live</b> to watch it grow with the replay, or
+<b>Whole episode</b>.</li>
 <li>In the <b>Timeline</b> tab, choose the colours of dots and tracks, whole tracks
 or only up to the instant, the numbers, and whether the camera follows the group.</li>
 <li>Rotate, move and zoom as in Routes. Select rows to highlight members, untick rows

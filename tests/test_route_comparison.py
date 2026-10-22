@@ -798,3 +798,203 @@ def test_native_subpixel_strokes_and_endpoint_annotations(qapp):
         np.testing.assert_array_equal(line.pos, positions)
     finally:
         view.close()
+
+
+def overview(n=101, side=100_000):
+    """A 1 km DEM of a tilted, rippled plane, as decode_terrain returns it."""
+    x = y = np.linspace(0, side, n)
+    xx, yy = np.meshgrid(x, y)
+    z = 500 + 0.01 * xx + 0.02 * yy + 100 * np.sin(xx / 7000) * np.cos(yy / 5000)
+    grid = side / (n - 1)
+    return (
+        x,
+        y,
+        z,
+        {"grid_m": (grid, grid), "coverage": 1, "dataset_url": "https://ign.fr"},
+    )
+
+
+def fake_detail_terrain(bounds, folder, *, cancel=None, min_step=100):
+    """An 81 x 81 DEM of `bounds` at 1234 m, as load_terrain returns it."""
+    assert min_step == rs.DETAIL_STEP_M
+    x = np.linspace(bounds[0], bounds[2], 81)
+    y = np.linspace(bounds[1], bounds[3], 81)
+    return x, y, np.full((81, 81), 1234.0), {"grid_m": (250, 250)}
+
+
+def fake_detail_aerial(bounds, folder, *, cancel=None, max_side=None):
+    assert max_side == rs.DETAIL_PIXELS
+    return np.zeros((4, 4, 3), np.uint8), {"grid_m": (5, 5)}
+
+
+def test_detail_square_snaps_and_joins_the_overview_without_cracks():
+    terrain = overview()
+    window = rs.detail_window(terrain, (31_000, 52_000), side=20_000)
+    assert window == (20, 40, 40, 60)
+    assert rs.detail_window(terrain, (34_000, 48_000), side=20_000) == window
+    assert rs.detail_window(terrain, (31_000, 52_000), side=1_000) is None
+    dx = np.linspace(20_000, 40_000, 81)
+    dy = np.linspace(40_000, 60_000, 81)
+    rough = np.random.default_rng(0).uniform(0, 3000, (81, 81))
+    x, y, z, _ = terrain
+    _, _, dz, _ = rs.stitch(terrain, (dx, dy, rough, {}), window)
+    np.testing.assert_allclose(dz[:, 0], np.interp(dy, y, z[:, 20]))
+    np.testing.assert_allclose(dz[-1], np.interp(dx, x, z[60]))
+    np.testing.assert_allclose([dz[0, 0], dz[-1, -1]], [z[40, 20], z[60, 40]])
+    np.testing.assert_array_equal(dz[1:-1, 1:-1], rough[1:-1, 1:-1])
+    vertices, faces = rs.terrain_mesh(terrain, np.zeros(2), hole=window)
+    assert len(faces) == 2 * (100 * 100 - 20 * 20)
+    x, y = vertices[:, 0], vertices[:, 1]
+    inside = (x > 20_000) & (x < 40_000) & (y > 40_000) & (y < 60_000)
+    assert not inside[faces].any()
+
+
+def test_detail_patch_holds_the_overview_then_the_finer_square(monkeypatch, tmp_path):
+    monkeypatch.setattr(rs, "load_terrain", fake_detail_terrain)
+    monkeypatch.setattr(rs, "load_aerial", fake_detail_aerial)
+    terrain = overview()
+    patch = rs.load_detail(terrain, (20, 40, 40, 60), np.array([5e4, 5e4]), tmp_path)
+    n = 101 * 101 + 81 * 81
+    assert len(patch.vertices) == len(patch.colours) == len(patch.gray) == n
+    assert patch.faces.max() < n
+    np.testing.assert_array_equal(patch.bounds, [-30_000, -10_000, -10_000, 10_000])
+    assert patch.vertices[-1, 2] == pytest.approx(terrain[2][60, 40])  # stitched
+    assert (patch.vertices[101 * 101 :, 2] == 1234).sum() == 79 * 79
+
+
+def test_terrain_detail_follows_the_view_and_patches_the_surface(
+    qapp, monkeypatch, tmp_path
+):
+    from PyQt6.QtGui import QVector3D
+
+    from xc_viewer.widgets.route_comparison import RouteComparison
+
+    monkeypatch.setattr(rs, "load_terrain", fake_detail_terrain)
+    monkeypatch.setattr(rs, "load_aerial", fake_detail_aerial)
+    selected, total = ri.select_flights(cohort(12), (90, 650, 100, 650))
+    scene = rs.RouteScene(
+        selected,
+        total,
+        (90, 650, 100, 650),
+        [
+            [np.array([[-50000, 0, 1000], [50000, 0, 2000]], dtype=np.float32)]
+            for _ in range(12)
+        ],
+        (0, 0, 100_000, 100_000),
+        np.array([50_000.0, 50_000.0]),
+        terrain=overview(),
+        terrain_folder=tmp_path,
+    )
+    view = RouteComparison()
+    try:
+        view.set_scene(scene)
+        detail = view._detail
+        assert detail._timer.isActive()
+        view._view.opts["center"] = QVector3D(-19_000, 2_000, 0)
+        view._view.opts["distance"] = 10_000
+        detail._poll()
+        detail._future.result()
+        detail._poll()
+        assert detail.patch.window == (20, 40, 40, 60)
+        assert len(view._surface.opts["meshdata"].vertexes()) == 101 * 101 + 81 * 81
+        assert view._surface._detail_image is detail.patch.photo
+        assert view._terrain_colours[0] is detail.patch.colours
+        assert "finer IGN data: DEM 250 m" in view._source.text()
+        detail._poll()
+        assert detail._future is None  # the same square is not loaded again
+        view._view.opts["center"] = QVector3D(20_000, 20_000, 0)
+        view._view.opts["distance"] = 100_000
+        detail._poll()
+        assert detail._future is None  # too far for a finer square
+        view._clear_scene()
+        assert not detail._timer.isActive() and detail.patch is None
+    finally:
+        view.shutdown()
+        view.close()
+
+
+def test_terrain_detail_skips_small_scenes_and_failed_squares(qapp, tmp_path):
+    from PyQt6.QtGui import QVector3D
+
+    from xc_viewer.widgets.terrain_detail import TerrainDetail
+
+    calls = []
+
+    def offline(terrain, window, origin, folder):
+        calls.append(window)
+        raise OSError("offline")
+
+    detail = TerrainDetail(loader=offline)
+    scene = SimpleNamespace(
+        terrain=overview(),
+        terrain_folder=tmp_path,
+        bounds=(0, 0, 100_000, 100_000),
+        origin=np.array([50_000.0, 50_000.0]),
+    )
+    view = SimpleNamespace(
+        opts={"center": QVector3D(-19_000, 2_000, 0), "distance": 10_000.0}
+    )
+    detail.attach(scene, view, None)
+    for _ in range(3):
+        detail._poll()
+        if detail._future is not None:
+            detail._future.exception()
+    assert calls == [(20, 40, 40, 60)] and detail.patch is None
+    detail.attach(
+        SimpleNamespace(**{**vars(scene), "bounds": (0, 0, 2e4, 2e4)}), view, None
+    )
+    assert not detail._timer.isActive()
+    detail.attach(
+        SimpleNamespace(**{**vars(scene), "terrain_folder": None}), view, None
+    )
+    assert not detail._timer.isActive()
+
+
+@pytest.mark.skipif(
+    os.environ.get("XC_VIEWER_NATIVE_OPENGL") != "1",
+    reason="Requires a native display and GPU to check the detail photo",
+)
+def test_native_detail_photo_replaces_the_overview_inside_its_square(qapp):
+    from PyQt6.QtGui import QImage, QVector3D
+    from PyQt6.QtTest import QTest
+
+    from xc_viewer.widgets.terrain_drape import DrapedTerrain
+    from xc_viewer.widgets.thermal_3d import TerrainView
+
+    view = TerrainView()
+    view.resize(600, 600)
+    x = y = np.linspace(-500, 500, 11)
+    vertices, faces = rs.terrain_mesh((x, y, np.zeros((11, 11)), {}), np.zeros(2))
+    mesh = DrapedTerrain(
+        image=np.full((8, 8, 3), [200, 0, 0], dtype=np.uint8),
+        bounds=(-500, -500, 500, 500),
+        vertexes=vertices,
+        faces=faces,
+        vertexColors=np.ones((len(vertices), 4), dtype=np.float32),
+        smooth=True,
+        computeNormals=False,
+    )
+    mesh.set_detail(
+        np.full((8, 8, 3), [0, 0, 200], dtype=np.uint8), (-200,) * 2 + (200,) * 2
+    )
+    mesh.set_aerial(True)
+    view.addItem(mesh)
+    view.opts["center"] = QVector3D(0, 0, 0)
+    view.setCameraPosition(distance=2500, elevation=90, azimuth=-90)
+    try:
+        view.show()
+        assert QTest.qWaitForWindowExposed(view)
+        qapp.processEvents()
+        image = view.grabFramebuffer().convertToFormat(QImage.Format.Format_RGBA8888)
+        rgba = (
+            np.frombuffer(image.bits().asstring(image.sizeInBytes()), np.uint8)
+            .copy()
+            .reshape(image.height(), image.width(), 4)
+        )
+        h, w = rgba.shape[:2]
+        centre = rgba[h // 2, w // 2, :3]
+        edge = rgba[h // 2, w // 2 + 70, :3]  # ~340 m east: outside the square
+        assert centre[2] > 150 and centre[0] < 50  # the detail photo
+        assert edge[0] > 150 and edge[2] < 50  # the overview photo
+    finally:
+        view.close()
