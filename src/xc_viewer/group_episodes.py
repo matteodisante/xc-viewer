@@ -11,7 +11,7 @@ every flight and, when present, the distance covered by every episode.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import numpy as np
@@ -21,10 +21,10 @@ import pyarrow.parquet as pq
 from . import catalog_index
 from .core.preproc.enu import LocalFrame
 from .geodesy import enu_to_geodetic
-from .route_index import FIX_COLUMNS
+from .route_index import FIX_COLUMNS, ROUTE_CELL_M
 from .route_scene import RouteScene, load_background
 from .sqlite import connect
-from .thermal_geometry import continuous_edges, project
+from .thermal_geometry import continuous_edges, project, unproject
 from .thermal_index import _check_cancel
 
 TABLES = ("flights", "pair_intervals", "configurations", "membership", "episodes")
@@ -43,6 +43,12 @@ SORT_KEYS = {
 }
 #: Replay starts and ends this long before and after the episode.
 MARGIN_S = 600
+#: What the zone and day browser counts per zone or day, and the column that holds it.
+METRICS = {
+    "episodes": "Episodes",
+    "flights": "Flights in episodes",
+    "hours": "Hours of episodes",
+}
 #: Catalog columns that say who flew a member, and their names in the members table.
 IDENTITY = {
     "pilot": "pilot",
@@ -112,21 +118,90 @@ def load_tables(folder):
     )
 
 
-def rank_episodes(tables, order="flights", *, discipline=None, year=None, minimum=2):
+def attach_zones(tables, index_flights):
+    """`tables` with ``zone_x`` and ``zone_y`` on every episode.
+
+    The zone is the 10 km departure cell from which most of the members took off, the
+    cell with the lowest indices winning a tie; ``index_flights`` is
+    ``RouteIndex.flights()``. An episode none of whose members has a cell gets NaN.
+    """
+    flights = tables.flights.assign(flight_id=tables.flights.flight_id.astype(str))
+    cells = flights[["flight", "discipline", "flight_id"]].merge(
+        index_flights[["discipline", "flight_id", "start_ix", "start_iy"]],
+        on=["discipline", "flight_id"],
+    )
+    members = tables.configurations[["episode_id", "members"]].explode("members")
+    members = members.assign(flight=members.members.astype(int))
+    members = (
+        members[["episode_id", "flight"]].drop_duplicates().merge(cells, on="flight")
+    )
+    count = members.groupby(["episode_id", "start_ix", "start_iy"]).size()
+    best = (
+        count.rename("n")
+        .reset_index()
+        .sort_values(
+            ["episode_id", "n", "start_ix", "start_iy"],
+            ascending=[True, False, True, True],
+        )
+        .drop_duplicates("episode_id")
+        .rename(columns={"start_ix": "zone_x", "start_iy": "zone_y"})
+    )
+    episodes = tables.episodes.drop(columns=["zone_x", "zone_y"], errors="ignore")
+    episodes = episodes.merge(
+        best[["episode_id", "zone_x", "zone_y"]].astype(float),
+        on="episode_id",
+        how="left",
+    )
+    return replace(tables, episodes=episodes)
+
+
+def rank_episodes(
+    tables,
+    order="flights",
+    *,
+    discipline=None,
+    year=None,
+    minimum=2,
+    zone=None,
+    day=None,
+):
     """Episodes in the requested order, best first, after the filters.
 
-    The filters keep a member of the discipline, the UTC year of the date, and at least
-    ``minimum`` distinct flights.
+    The filters keep a member of the discipline, the UTC year of the date, at least
+    ``minimum`` distinct flights, the zone ``(zone_x, zone_y)`` of `attach_zones` and
+    the UTC date ``day``.
     """
     e = tables.episodes
     if discipline is not None:
         e = e[e.disciplines.map(lambda d: discipline in d)]
     if year is not None:
         e = e[e.date.str[:4] == str(year)]
+    if zone is not None:
+        e = e[(e.zone_x == zone[0]) & (e.zone_y == zone[1])]
+    if day is not None:
+        e = e[e.date == day]
     e = e[e.n_flights >= minimum]
     return e.sort_values(
         SORT_KEYS[order], ascending=False, na_position="last", kind="stable"
     ).reset_index(drop=True)
+
+
+def activity(episodes, keys):
+    """Episodes, flights and hours of `episodes` for each value of `keys`."""
+    total = episodes.groupby(keys).agg(
+        episodes=("episode_id", "size"),
+        flights=("n_flights", "sum"),
+        seconds=("duration_s", "sum"),
+    )
+    return (
+        total.assign(hours=total.seconds / 3600).drop(columns="seconds").reset_index()
+    )
+
+
+def zone_label(zone):
+    """A 10 km zone as the latitude and longitude of its centre."""
+    lon, lat = unproject((zone[0] + 0.5) * ROUTE_CELL_M, (zone[1] + 0.5) * ROUTE_CELL_M)
+    return f"{float(lat):.2f}°N {float(lon):.2f}°E"
 
 
 @dataclass

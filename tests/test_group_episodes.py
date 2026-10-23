@@ -252,7 +252,9 @@ def test_scene_colours_configurations_pilots_and_contacts(qapp, tmp_path):
         view._track_by.setCurrentIndex(view._track_by.findData("episode"))
         np.testing.assert_allclose(view._lines[0][1].color, _rgba(EPISODE, 0.9))
         np.testing.assert_allclose(view._lines[0][0].color, _rgba(TRACK, 0.35))
-        assert view._now == T0 + 600 and view._cursor.value() == T0 + 600
+        low = ep.window[0]  # the replay opens at the start of the slider
+        assert view._now == low and view._cursor.value() == low
+        assert view._slider.value() == 0
         view.seek(T0 + 1000)
         np.testing.assert_allclose(
             view._markers.color, [_rgba(c) for c in (PALETTE[0], PALETTE[0], SOLO)]
@@ -282,7 +284,7 @@ def test_scene_colours_configurations_pilots_and_contacts(qapp, tmp_path):
         assert not view._reeb_future.isVisible()
         view._reeb_cursor.setValue(T0 + 2000)  # dragging the Reeb graph moves it too
         assert view._now == T0 + 2000 and view._cursor.value() == T0 + 2000
-        view._whole.setChecked(False)  # only what has been flown
+        view._extent.setCurrentIndex(view._extent.findData("flown"))
         track = ep.tracks[0]
         assert not view._lines[0][1].visible() and view._flown[0].visible()
         np.testing.assert_allclose(view._flown[0].pos[-1], track.at(T0 + 2000))
@@ -291,7 +293,10 @@ def test_scene_colours_configurations_pilots_and_contacts(qapp, tmp_path):
         np.testing.assert_allclose(view._trails[0].pos[-1], track.at(T0 + 2010))
         view.seek(T0 + 1500)  # back in time: rebuilt
         np.testing.assert_allclose(view._flown[0].pos[-1], track.at(T0 + 1500))
-        view._whole.setChecked(True)
+        view._extent.setCurrentIndex(view._extent.findData("trail"))
+        assert not view._lines[0][1].visible() and not view._flown[0].visible()
+        assert view._trails[0].visible()  # the last minutes, nothing before them
+        view._extent.setCurrentIndex(view._extent.findData("whole"))
         assert view._lines[0][1].visible() and not view._flown[0].visible()
         view._cursor.setValue(T0 + 1000)  # dragging the timeline moves the instant
         assert (
@@ -321,13 +326,113 @@ def test_scene_colours_configurations_pilots_and_contacts(qapp, tmp_path):
         assert view._now == ep.window[1]
         view._play.setChecked(True)
         assert view._now == ep.window[0]  # playing from the end starts again
+        view._advance()
+        assert view._timer.isActive()  # each frame arms the next
         view.seek(ep.window[1] - 1)
         view._advance()
-        assert not view._play.isChecked()  # and stops at the end
+        assert not view._play.isChecked() and not view._timer.isActive()  # the end
         view._clear_scene()
         assert view._markers is None and not view._slider.isEnabled()
         assert who.rowCount() == 0 and view._lower.isHidden()
         view.seek(T0 + 1000)  # nothing to draw, nothing fails
+    finally:
+        view.shutdown()
+        view.close()
+
+
+def test_a_click_picks_the_nearest_visible_dot_within_reach():
+    from xc_viewer.widgets.group_scene import nearest_member
+
+    points = np.array([[10.0, 10.0], [50.0, 10.0], [52.0, 12.0]])
+    visible = np.array([True, True, False])
+    assert nearest_member(points, visible, 12, 11) == 0
+    assert nearest_member(points, visible, 51, 12) == 1  # the hidden dot is skipped
+    assert nearest_member(points, visible, 300, 300) is None  # out of reach
+    assert nearest_member(np.zeros((0, 2)), np.zeros(0, bool), 0, 0) is None
+
+
+def test_the_view_reports_a_click_but_not_a_drag(qapp):
+    from PyQt6.QtCore import QPoint, Qt
+    from PyQt6.QtTest import QTest
+
+    from xc_viewer.widgets.thermal_3d import TerrainView
+
+    view = TerrainView()
+    clicks = []
+    view.clicked.connect(lambda x, y: clicks.append((x, y)))
+    try:
+        left = Qt.MouseButton.LeftButton
+        QTest.mouseClick(view, left, pos=QPoint(10, 12))
+        assert clicks == [(10.0, 12.0)]
+        QTest.mousePress(view, left, pos=QPoint(10, 12))
+        QTest.mouseMove(view, QPoint(80, 12))
+        QTest.mouseRelease(view, left, pos=QPoint(80, 12))
+        assert len(clicks) == 1  # the pointer moved: a drag, not a click
+    finally:
+        view.close()
+
+
+def test_clicking_a_pilot_follows_its_configuration(qapp, tmp_path, monkeypatch):
+    from xc_viewer.widgets import group_scene as gs
+
+    scene, ep = replay(tmp_path)
+    view = gs.EpisodeScene()
+    try:
+        view.set_episode(scene, ep)
+        view.seek(T0 + 1000)  # flights 0 and 1 in a configuration, flight 2 alone
+        assert set(view._located) == {0, 1, 2}
+        monkeypatch.setattr(  # member k at the pixel (100 k, 0)
+            gs,
+            "screen_points",
+            lambda item, xyz: (
+                np.column_stack([100.0 * np.arange(len(xyz)), np.zeros(len(xyz))]),
+                np.ones(len(xyz), bool),
+            ),
+        )
+        view._picked(200, 3)  # member 3 is alone
+        assert view._focus == () and "Member 3" in view._focus_text.text()
+        view._picked(500, 500)  # nothing there
+        assert view._focus == ()
+        view._picked(105, 3)  # member 2, in the configuration of members 1 and 2
+        assert view._focus == (0, 1) and view._focus_clear.isEnabled()
+        assert "1, 2" in view._focus_text.text()
+        centre = view._view.opts["center"]
+        both = np.mean([ep.tracks[f].at(T0 + 1000) for f in (0, 1)], axis=0)
+        np.testing.assert_allclose([centre.x(), centre.y()], both[:2])
+        assert view._markers.color[2][3] > 0  # all members stay drawn...
+        view._focus_only.setChecked(True)  # ...unless asked
+        assert view._markers.color[2][3] == 0
+        assert view._numbers_item.texts == ["1", "2"]
+        view.seek(T0 + 2500)  # the configuration is over, its members are followed
+        assert view._focus == (0, 1) and view._markers.color[2][3] == 0
+        view._focus_clear.click()
+        assert view._focus == () and not view._focus_only.isChecked()
+        assert view._markers.color[2][3] > 0
+        view._picked(105, 3)
+        view._clear_scene()  # a new episode starts without focus
+        assert view._focus == () and not view._focus_clear.isEnabled()
+    finally:
+        view.shutdown()
+        view.close()
+
+
+def test_the_replay_holds_while_a_mouse_button_is_down(qapp, monkeypatch):
+    from PyQt6.QtCore import Qt
+    from PyQt6.QtGui import QGuiApplication
+
+    from xc_viewer.widgets.group_scene import EpisodeScene
+
+    view = EpisodeScene()
+    try:
+        down = Qt.MouseButton.LeftButton
+        monkeypatch.setattr(QGuiApplication, "mouseButtons", lambda: down)
+        view._advance()
+        assert view._timer.isActive()  # no frame drawn, the next one is armed
+        view._timer.stop()
+        up = Qt.MouseButton.NoButton
+        monkeypatch.setattr(QGuiApplication, "mouseButtons", lambda: up)
+        view._advance()
+        assert not view._timer.isActive()  # no episode: the replay stops
     finally:
         view.shutdown()
         view.close()
@@ -381,6 +486,97 @@ def test_tab_ranks_the_episodes_of_the_chosen_tables(qapp, tmp_path):
         assert tab._episodes.currentData() == 1
         tab._minimum.setValue(3)
         assert tab._episodes.count() == 1
+    finally:
+        tab.shutdown()
+        tab.close()
+
+
+def zoned_tables(folder):
+    """The tables of `write_tables` with zones: day one starts in cell (10, 20) with
+    two flights of three; the other day has a tie between (30, 40) and (31, 40)."""
+    cells = pd.DataFrame(
+        {
+            "discipline": ["paragliders"] * 2 + ["hang gliders"] + ["paragliders"] * 2,
+            "flight_id": ["a", "b", "c", "d", "e"],
+            "start_ix": [10, 10, 11, 31, 30],
+            "start_iy": [20, 20, 20, 40, 40],
+        }
+    )
+    return ge.attach_zones(ge.load_tables(write_tables(folder)), cells)
+
+
+def test_an_episode_is_in_the_cell_most_of_its_members_took_off_from(tmp_path):
+    tables = zoned_tables(tmp_path / "out")
+    e = tables.episodes.set_index("episode_id")
+    assert e.loc[0, ["zone_x", "zone_y"]].tolist() == [10, 20]
+    assert e.loc[1, ["zone_x", "zone_y"]].tolist() == [30, 40]  # a tie: lowest cell
+    first = ge.rank_episodes(tables, "flights", zone=(10, 20))
+    assert first.episode_id.tolist() == [0]
+    assert ge.rank_episodes(tables, "flights", day=OTHER).episode_id.tolist() == [1]
+    assert ge.rank_episodes(tables, "flights", zone=(10, 20), day=OTHER).empty
+    by_day = ge.activity(tables.episodes, ["date"]).set_index("date")
+    assert by_day.loc[DAY, ["episodes", "flights"]].tolist() == [1, 3]
+    assert by_day.loc[DAY, "hours"] == pytest.approx(2400 / 3600)
+    assert "°N" in ge.zone_label((10, 20)) and "°E" in ge.zone_label((10, 20))
+
+
+def test_an_episode_without_a_located_member_has_no_zone(tmp_path):
+    tables = ge.load_tables(write_tables(tmp_path / "out"))
+    cells = pd.DataFrame(
+        {
+            "discipline": ["paragliders"],
+            "flight_id": ["d"],
+            "start_ix": [5],
+            "start_iy": [6],
+        }
+    )
+    e = ge.attach_zones(tables, cells).episodes.set_index("episode_id")
+    assert e.zone_x.isna().tolist() == [True, False]  # only flight d is in the index
+    assert e.loc[1, ["zone_x", "zone_y"]].tolist() == [5, 6]
+
+
+def test_the_browser_narrows_days_to_a_zone_and_the_map_to_a_day(qapp, tmp_path):
+    from xc_viewer.widgets.group_zones import ZoneDayDialog, cell_corners, zone_at
+
+    corners = cell_corners([(10, 20)])
+    assert zone_at(*corners[0].mean(axis=0)) == (10, 20)  # a click inside the cell
+    tables = zoned_tables(tmp_path / "out")
+    dialog = ZoneDayDialog()
+    chosen = []
+    dialog.chosen.connect(lambda zone, day: chosen.append((zone, day)))
+    try:
+        dialog.set_data(
+            tables, {"discipline": None, "year": None, "minimum": 2}, None, None
+        )
+        assert dialog._days.rowCount() == 2 and dialog._zones == {(10, 20), (30, 40)}
+        dialog.choose((10, 20), None)
+        assert dialog._days.rowCount() == 1  # the days of that zone only
+        dialog._days.selectRow(0)
+        assert dialog._day == DAY and dialog._zones == {(10, 20)}  # the map of that day
+        assert not dialog._clear_zone.isHidden() and dialog._clear_day.isEnabled()
+        dialog._show.click()
+        assert chosen == [((10, 20), DAY)]
+        dialog.choose(None, None)
+        assert dialog._days.rowCount() == 2 and len(dialog._zones) == 2
+    finally:
+        dialog.close()
+
+
+def test_tab_lists_the_episodes_of_a_zone_and_a_day(qapp, tmp_path):
+    from xc_viewer.widgets.group_flights import GroupFlights
+
+    tab = GroupFlights()
+    try:
+        tab._tables = zoned_tables(tmp_path / "out")
+        tab._show_sources()
+        assert tab._episodes.count() == 2 and "°N" in tab._episodes.itemText(0)
+        tab._choose_where((30, 40), None)
+        assert tab._episodes.count() == 1 and tab._episodes.currentData() == 1
+        assert "zone" in tab._where.text() and tab._clear_where.isEnabled()
+        tab._choose_where(None, DAY)
+        assert tab._episodes.currentData() == 0 and "day " + DAY in tab._where.text()
+        tab._clear_where.click()
+        assert tab._episodes.count() == 2 and not tab._clear_where.isEnabled()
     finally:
         tab.shutdown()
         tab.close()

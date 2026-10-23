@@ -14,12 +14,16 @@ The **Group flights** tab is rebuilt on the groups found by the delayed-contact 
 - The tables are read from the `groups/` folder of the data folder, where xc-lab's
   `export_viewer.py` copies one run with its `PARAMETERS.md`.
 - Episodes are ranked by distinct flights, largest configuration, duration or distance.
+  **Zones and days…** opens a map of the 10 km zones and a list of the days, coloured and
+  sorted by episodes, flights or hours, to pick where and when to look.
 - **Load episode** draws the members on the terrain of Routes; **Play** and the time
   slider move them as numbered dots in the colour of their configuration, joined by
-  lines of the same colour when in contact; tracks take one colour per pilot, whole or
-  only up to the instant. Beside the scene, the contact graph of the instant; under it, the
-  **Timeline** of every member and the **Reeb graph** of the episode, live or whole.
-  **Who is who** lists the pilot, flight ID, club and wing behind each member number.
+  lines of the same colour when in contact; tracks take one colour per pilot, whole, only
+  up to the instant or as the bright trail alone. A click on a pilot makes the camera
+  follow its configuration, alone or with the others hidden. Beside the scene, the
+  contact graph of the instant; under it, the **Timeline** of every member and the
+  **Reeb graph** of the episode, live or whole. **Who is who** lists the pilot, flight
+  ID, club and wing behind each member number.
 
 To launch this branch instead of `main` (the [requirements](#requirements) and the data
 folder are the same as below):

@@ -8,7 +8,7 @@ import pyqtgraph.opengl as gl
 from matplotlib import colormaps
 from OpenGL import GL
 from PyQt6.QtCore import QRectF, Qt, QTimer
-from PyQt6.QtGui import QColor, QFont, QPainter, QVector3D
+from PyQt6.QtGui import QColor, QFont, QGuiApplication, QPainter, QVector3D
 from PyQt6.QtWidgets import (
     QAbstractItemView,
     QCheckBox,
@@ -61,6 +61,9 @@ EPISODE = "#ffd23f"  # every track while its flight is in the episode
 SELECTED = "#1464ff"
 CONTACT = "#ffffff"  # contacts when the dots are coloured by pilot
 OTHER = "#ffffff"  # members in a configuration of another episode
+#: A click picks the member whose dot is at most this many pixels away.
+PICK_PX = 18
+FOCUS_HINT = "Click a pilot to follow its configuration"
 SPEEDS = (10, 30, 60, 120, 300)
 STEP_S = 5
 TICK_MS = 50
@@ -199,6 +202,16 @@ class _Numbers(GLGraphicsItem):
             painter.end()
 
 
+def nearest_member(points, visible, x, y, radius=PICK_PX):
+    """Index of the visible pixel `points` nearest (x, y) within `radius`, or None."""
+    if not len(points):
+        return None
+    gap = np.hypot(points[:, 0] - x, points[:, 1] - y)
+    gap[~visible] = np.inf
+    k = int(np.argmin(gap))
+    return k if gap[k] <= radius else None
+
+
 class _ClockAxis(pg.AxisItem):
     """UTC seconds shown as the time of day in Paris."""
 
@@ -226,6 +239,7 @@ class EpisodeScene(RouteComparison):
         self._conf_colour = {}
         self._reeb_data = None
         self._now = 0.0
+        self._focus, self._located, self._clicks = (), {}, None
         self._mode.clear()
         self._mode.addItem("All members", "all")
         self._mode.addItem("Selected rows only", "selected")
@@ -291,6 +305,7 @@ class EpisodeScene(RouteComparison):
         self._build_graph()
         self._timer = QTimer(self)
         self._timer.setInterval(TICK_MS)
+        self._timer.setSingleShot(True)  # re-armed after each frame, see _advance
         self._timer.timeout.connect(self._advance)
         self._play.toggled.connect(self._toggle_play)
         self._slider.valueChanged.connect(self._slid)
@@ -307,14 +322,25 @@ class EpisodeScene(RouteComparison):
         self._track_by = QComboBox()
         self._track_by.addItem("Tracks by pilot", "pilot")
         self._track_by.addItem("Tracks yellow in the episode", "episode")
-        self._whole = QCheckBox("Whole tracks")
-        self._whole.setChecked(True)
-        self._whole.setToolTip("Untick to draw each track only up to the instant")
+        self._extent = QComboBox()
+        self._extent.addItem("Whole tracks", "whole")
+        self._extent.addItem("Tracks up to the instant", "flown")
+        self._extent.addItem("Trail only", "trail")
+        self._extent.setToolTip(
+            "Each track whole, only up to the instant, or only its bright trail"
+        )
         self._numbers = QCheckBox("Numbers")
         self._numbers.setChecked(True)
         self._numbers.setToolTip("Write the member number next to each dot")
         self._follow = QCheckBox("Follow the group")
         self._follow.setToolTip("Keep the camera centred on the members in flight")
+        self._focus_only = QCheckBox("Only the focused configuration")
+        self._focus_only.setToolTip(
+            "Hide the members that are not in the configuration picked with a click"
+        )
+        self._focus_clear = QPushButton("Clear focus")
+        self._focus_clear.setToolTip("Follow and show every member again")
+        self._focus_text = QLabel(FOCUS_HINT)
         self._strip = pg.PlotWidget(axisItems={"bottom": _ClockAxis("bottom")})
         self._strip.setMenuEnabled(False)
         self._strip.setMouseEnabled(x=True, y=False)
@@ -325,13 +351,16 @@ class EpisodeScene(RouteComparison):
         controls = (
             self._colour_by,
             self._track_by,
-            self._whole,
+            self._extent,
             self._numbers,
             self._follow,
+            self._focus_only,
         )
         options = FlowLayout()
-        for widget in controls:
+        for widget in (*controls, self._focus_clear, self._focus_text):
             options.addWidget(widget)
+        self._focus_clear.clicked.connect(lambda: self.focus_configuration(None))
+        self._reset_focus()
         page = QWidget()
         column = QVBoxLayout(page)
         column.setContentsMargins(0, 0, 0, 0)
@@ -442,10 +471,13 @@ class EpisodeScene(RouteComparison):
     # -- loading -------------------------------------------------------------------
 
     def set_episode(self, scene, episode):
-        """Draw a scene of `group_episodes.load_episode_scene` at the episode start."""
+        """Draw a scene of `group_episodes.load_episode_scene` at the replay start."""
         self._episode = episode
         self._conf_colour = _conf_colours(episode.configurations)
         self.set_scene(scene)
+        if self._clicks is not self._view:
+            self._view.clicked.connect(self._picked)
+            self._clicks = self._view
         n = len(episode.members)
         self._markers = gl.GLScatterPlotItem(pos=np.zeros((n, 3)), size=11, pxMode=True)
         self._markers.setGLOptions("translucent")
@@ -478,7 +510,7 @@ class EpisodeScene(RouteComparison):
         self._set_timeline_enabled(True)
         if self._who_window is not None:
             self._who_window.set_members(episode.members)
-        self.seek(float(episode.row.t_start))
+        self.seek(low)
 
     @staticmethod
     def _line(depth, **kwargs):
@@ -586,6 +618,8 @@ class EpisodeScene(RouteComparison):
             self._timer.stop()
             self._play.setChecked(False)
             self._set_timeline_enabled(False)
+            self._reset_focus()
+            self._located = {}
             self._now_text.clear()
             self._clock.setText("--")
             self._strip.clear()
@@ -653,19 +687,83 @@ class EpisodeScene(RouteComparison):
             self._timer.stop()
 
     def _advance(self):
+        """One frame; the next one waits TICK_MS after it, leaving room for clicks.
+
+        The replay holds while a mouse button is down, so that dragging the camera or
+        the cursor is not drawn against the replay frames.
+        """
+        if QGuiApplication.mouseButtons() != Qt.MouseButton.NoButton:
+            self._timer.start()
+            return
         step = self._speed.currentData() * TICK_MS / 1000
         if self._episode is None or self._now + step > self._episode.window[1]:
             self._play.setChecked(False)
             return
         self.seek(self._now + step)
+        if self._play.isChecked():
+            self._timer.start()
+
+    def _reset_focus(self):
+        """No configuration is focused."""
+        self._focus = ()
+        self._focus_only.blockSignals(True)
+        self._focus_only.setChecked(False)
+        self._focus_only.blockSignals(False)
+        self._focus_only.setEnabled(False)
+        self._focus_clear.setEnabled(False)
+        self._focus_text.setText(FOCUS_HINT)
+
+    def focus_configuration(self, conf_id):
+        """Follow the members of configuration `conf_id` with the camera; None clears.
+
+        The focus is the set of members of the configuration and stays when it ends.
+        With the box ticked, the other members are hidden.
+        """
+        ep = self._episode
+        if conf_id is None or ep is None:
+            self._reset_focus()
+        else:
+            row = ep.configurations[ep.configurations.conf_id == conf_id].iloc[0]
+            self._focus = tuple(int(f) for f in row.members)
+            number = {f: k + 1 for k, f in enumerate(ep.members.flight)}
+            self._focus_only.setEnabled(True)
+            self._focus_clear.setEnabled(True)
+            self._focus_text.setText(
+                "Following members "
+                + ", ".join(str(n) for n in sorted(number[f] for f in self._focus))
+            )
+        self._style_changed()
+
+    def _picked(self, x, y):
+        """A click at pixel (x, y) of the scene: focus the configuration under it."""
+        ep = self._episode
+        if ep is None or not self._located:
+            return
+        flights = list(self._located)
+        points, visible = screen_points(
+            self._numbers_item, np.array(list(self._located.values()))
+        )
+        k = nearest_member(points, visible, x, y)
+        if k is None:
+            return
+        confs = ep.configurations_at(self._now)
+        mine = confs[confs.members.map(lambda members: flights[k] in members)]
+        if mine.empty:
+            number = ep.members.flight.to_list().index(flights[k]) + 1
+            self._focus_text.setText(f"Member {number} is in no configuration now")
+            return
+        self.focus_configuration(int(mine.conf_id.iloc[0]))
 
     def _shown(self):
-        """Members drawn: ticked, and selected when the mode asks for it."""
+        """Members drawn: ticked, selected when the mode asks, and focused if asked."""
         selected = {item.row() for item in self._table.selectedItems()}
+        flights = self._episode.members.flight.to_list()
+        only = set(self._focus) if self._focus_only.isChecked() else None
         return [
             self._flight_checked(k)
             and (self._mode.currentData() == "all" or k in selected)
-            for k in range(len(self._episode.members))
+            and (only is None or flights[k] in only)
+            for k in range(len(flights))
         ]
 
     def _colours(self, t):
@@ -724,14 +822,14 @@ class EpisodeScene(RouteComparison):
         flights = ep.members.flight.to_list()
         shown = self._shown()
         colours = self._colours(t)
-        whole = self._whole.isChecked()
-        rebuild = not whole and (
+        up_to_now = self._extent.currentData() == "flown"
+        rebuild = up_to_now and (
             self._flown_at is None or not 0 <= t - self._flown_at < FLOWN_STEP_S
         )
         if rebuild:
             self._flown_at = t
         recent = 60 * self._trail.value()
-        if not whole:
+        if up_to_now:
             recent = max(recent, t - self._flown_at)
         positions, dots, sizes, where = [], [], [], {}
         for k, (f, (colour, grouped)) in enumerate(zip(flights, colours, strict=True)):
@@ -757,6 +855,7 @@ class EpisodeScene(RouteComparison):
                         color=_rgba(self._track_colour(k, True), 0.8),
                         width=self._line_width.value(),
                     )
+        self._located = where
         self._markers.setData(
             pos=np.array(positions), color=np.array(dots), size=np.array(sizes)
         )
@@ -776,8 +875,13 @@ class EpisodeScene(RouteComparison):
             line.setVisible(bool(ends))
             if ends:
                 line.setData(pos=np.array(ends, np.float32).reshape(-1, 3))
-        if self._follow.isChecked() and where and self._view is not None:
-            x, y, z = np.mean(list(where.values()), axis=0)
+        followed = where
+        if self._focus:
+            followed = {f: p for f, p in where.items() if f in self._focus}
+        elif not self._follow.isChecked():
+            followed = {}
+        if followed and self._view is not None:
+            x, y, z = np.mean(list(followed.values()), axis=0)
             self._view.opts["center"] = QVector3D(x, y, z * self._vertical.value())
             self._view.update()
         self._clock.setText(_flight_datetime(t).split(" ")[1])
@@ -909,7 +1013,7 @@ class EpisodeScene(RouteComparison):
         selected = {item.row() for item in self._table.selectedItems()}
         shown = self._shown()
         flights = self._episode.members.flight.to_list()
-        whole = self._whole.isChecked()
+        whole = self._extent.currentData() == "whole"
         for i, lines in enumerate(self._lines):
             inside = self._episode.inside.get(flights[i], [])
             for j, line in enumerate(lines):

@@ -546,14 +546,17 @@ previous one ends and keeps at least one of its pilots. A group that splits or m
 stays in its episode; a group that dissolves ends it.</li>
 <li>Episodes can be ranked by distinct flights, by their largest configuration, by
 duration or by the distance covered.</li>
+<li>The <b>zone</b> of an episode is the 10 km cell, as in Routes, from which most of
+its pilots took off. It needs the census of cleaned tracks.</li>
 </ul>
 
 <h3>Scene, graphs and table</h3>
 <ul>
 <li>Lines are the cleaned tracks of the members, from 10 minutes before the episode
 to 10 minutes after it, one colour per pilot, faint before and after the episode (or
-yellow in the episode, if you prefer). Untick <b>Whole tracks</b> to draw each one only
-up to the chosen instant.</li>
+yellow in the episode, if you prefer). Choose <b>Tracks up to the instant</b> to draw
+each one only up to the chosen instant, or <b>Trail only</b> to draw just its bright
+trail, without the way flown before.</li>
 <li>Dots are the members at the chosen instant, each with its number and a bright trail
 of its last minutes. A large dot is in a configuration and takes its colour; a line in
 the same colour joins two pilots in contact. Two configurations in progress together
@@ -593,16 +596,28 @@ another run of the group identification, export it there with
 builds the census of cleaned tracks that Routes uses too.</li>
 <li>Pick <b>Rank by</b>, a discipline, a year and <b>Minimum flights</b>; the list of
 episodes follows at once.</li>
+<li>To find where and when pilots fly together, click <b>Zones and days…</b>: the map
+colours the 10 km zones by episodes, flights or hours, and the table lists the days,
+the most active first. Click a zone to list its days, a day to map the zones of that
+day, then <b>Show these episodes</b>; <b>All zones and days</b> removes the choice.
+The filters above still apply.</li>
 <li>Pick an <b>Episode</b> and click <b>Load episode</b>.</li>
 <li>Click <b>Play</b>, drag the slider, or drag the white cursor of the
 <b>Timeline</b> or <b>Reeb graph</b> tab. Set the replay speed and the trail length next
-to the slider.</li>
+to the slider. The replay holds while a mouse button is down, so that dragging the view
+or the slider is smooth.</li>
+<li>Click a pilot's dot in the scene to follow its configuration: the camera keeps on
+its members, even after the configuration ends. Tick <b>Only the focused
+configuration</b> to hide the other members, and click <b>Clear focus</b> to see and
+follow everyone again. A pilot in no configuration at that instant cannot be
+picked.</li>
 <li>Click <b>Who is who</b> for the pilot, flight ID, club, wing and sites of each
 member number; the window can stay open during the replay.</li>
 <li>In the <b>Reeb graph</b> tab, pick <b>Live</b> to watch it grow with the replay, or
 <b>Whole episode</b>.</li>
-<li>In the <b>Timeline</b> tab, choose the colours of dots and tracks, whole tracks
-or only up to the instant, the numbers, and whether the camera follows the group.</li>
+<li>In the <b>Timeline</b> tab, choose the colours of dots and tracks, whether
+tracks are drawn whole, only up to the instant or as the bright trail alone, the
+numbers, and whether the camera follows the group.</li>
 <li>Rotate, move and zoom as in Routes. Select rows to highlight members, untick rows
 to hide them, or pick <b>Selected rows only</b>.</li>
 </ol>

@@ -11,10 +11,18 @@ from PyQt6.QtWidgets import (
 )
 
 from .. import datafolder
-from ..group_episodes import ORDERS, load_episode_scene, load_tables, rank_episodes
+from ..group_episodes import (
+    ORDERS,
+    attach_zones,
+    load_episode_scene,
+    load_tables,
+    rank_episodes,
+    zone_label,
+)
 from ..route_index import build_index, load_saved_index
 from .flow_layout import FlowLayout, labeled_control
 from .group_scene import EpisodeScene
+from .group_zones import ZoneDayDialog
 from .help import help_buttons
 from .route_comparison import _RouteWorker
 
@@ -60,6 +68,11 @@ class GroupFlights(QWidget):
         self._minimum = QSpinBox()
         self._minimum.setRange(2, 100)
         self._minimum.setKeyboardTracking(False)
+        self._zone = self._day = self._dialog = None
+        self._browse = QPushButton("Zones and days…")
+        self._browse.setToolTip("Find the zones and the days with most group flights")
+        self._where = QLabel()
+        self._clear_where = QPushButton("All zones and days")
         self._episodes = QComboBox()
         self._episodes.setMinimumContentsLength(40)
         self._episodes.setSizeAdjustPolicy(
@@ -81,6 +94,9 @@ class GroupFlights(QWidget):
             self._discipline,
             self._year,
             labeled_control("Minimum flights", self._minimum),
+            self._browse,
+            self._where,
+            self._clear_where,
             labeled_control("Episode", self._episodes),
             self._load,
         ):
@@ -93,12 +109,15 @@ class GroupFlights(QWidget):
         self._prepare.clicked.connect(self._prepare_index)
         self._cancel.clicked.connect(self._cancel_work)
         self._load.clicked.connect(self._load_episode)
+        self._browse.clicked.connect(self._browse_zones)
+        self._clear_where.clicked.connect(lambda: self._choose_where(None, None))
         for combo in (self._order, self._discipline, self._year):
             combo.currentIndexChanged.connect(self._rank)
         self._minimum.valueChanged.connect(self._rank)
         self._episodes.currentIndexChanged.connect(
             lambda _: self._viewer._clear_scene()
         )
+        self._update_where()
         self._set_busy(False)
 
     # -- sources -------------------------------------------------------------------
@@ -117,7 +136,10 @@ class GroupFlights(QWidget):
     def _read_sources(self, folder, *, prepare):
         def operation(**kw):
             index = build_index(**kw) if prepare else load_saved_index()
-            return index, (load_tables(folder) if folder is not None else None)
+            tables = load_tables(folder) if folder is not None else None
+            if tables is not None and index is not None:
+                tables = attach_zones(tables, index.flights())
+            return index, tables
 
         self._viewer._clear_scene()
         self._run(operation, "sources")
@@ -172,6 +194,10 @@ class GroupFlights(QWidget):
         for widget in (self._order, self._discipline, self._year, self._minimum):
             widget.setEnabled(not busy and self._tables is not None)
         self._episodes.setEnabled(not busy and self._episodes.count() > 0)
+        self._browse.setEnabled(not busy and ready)
+        self._clear_where.setEnabled(
+            not busy and (self._zone is not None or self._day is not None)
+        )
         self._prepare.setEnabled(not busy)
         self._cancel.setEnabled(busy)
         self._load.setEnabled(not busy and ready and self._episodes.count() > 0)
@@ -210,6 +236,8 @@ class GroupFlights(QWidget):
         for year in sorted(tables.episodes.date.str[:4].unique(), reverse=True):
             self._year.addItem(year, int(year))
         self._year.blockSignals(False)
+        self._zone = self._day = None
+        self._update_where()
         if self._index is None:
             self._status.setText(
                 "No census of cleaned tracks yet: click Prepare / refresh index."
@@ -225,9 +253,9 @@ class GroupFlights(QWidget):
             ranked = rank_episodes(
                 self._tables,
                 self._order.currentData(),
-                discipline=self._discipline.currentData(),
-                year=self._year.currentData(),
-                minimum=self._minimum.value(),
+                **self._filters(),
+                zone=self._zone,
+                day=self._day,
             )
             for k, row in enumerate(ranked.head(LISTED).itertuples(), 1):
                 distance = (
@@ -235,9 +263,15 @@ class GroupFlights(QWidget):
                     if np.isfinite(row.distance_m)
                     else ""
                 )
+                zone_x = getattr(row, "zone_x", np.nan)
+                where = (
+                    f" · {zone_label((zone_x, row.zone_y))}"
+                    if self._zone is None and np.isfinite(zone_x)
+                    else ""
+                )
                 self._episodes.addItem(
                     f"{k}. {row.date} · {row.n_flights} flights (largest "
-                    f"{row.n_max}) · {row.duration_s / 3600:.1f} h{distance}",
+                    f"{row.n_max}) · {row.duration_s / 3600:.1f} h{distance}{where}",
                     int(row.episode_id),
                 )
             if self._index is not None:
@@ -251,6 +285,38 @@ class GroupFlights(QWidget):
                 )
         self._episodes.blockSignals(False)
         self._set_busy(self._worker is not None)
+
+    def _filters(self):
+        """The discipline, year and minimum flights, as `rank_episodes` takes them."""
+        return {
+            "discipline": self._discipline.currentData(),
+            "year": self._year.currentData(),
+            "minimum": self._minimum.value(),
+        }
+
+    def _browse_zones(self):
+        """Open the map of the zones and the list of the days, from the filters."""
+        if self._tables is None:
+            return
+        if self._dialog is None:
+            self._dialog = ZoneDayDialog(self)
+            self._dialog.chosen.connect(self._choose_where)
+        self._dialog.set_data(self._tables, self._filters(), self._zone, self._day)
+        self._dialog.show()
+        self._dialog.raise_()
+
+    def _choose_where(self, zone, day):
+        """List the episodes of a zone and a day; None means all of them."""
+        self._zone, self._day = zone, day
+        self._update_where()
+        self._rank()
+
+    def _update_where(self):
+        """Say which zone and day the episodes are limited to."""
+        zone = "all zones" if self._zone is None else f"zone {zone_label(self._zone)}"
+        day = "all days" if self._day is None else f"day {self._day}"
+        self._where.setText(f"{zone} · {day}")
+        self._clear_where.setEnabled(self._zone is not None or self._day is not None)
 
     def _load_episode(self):
         """Read the members' tracks and terrain in the background."""
@@ -272,12 +338,16 @@ class GroupFlights(QWidget):
             worker.cancel.set()
             worker.wait()
             worker.deleteLater()
+        if self._dialog is not None:
+            self._dialog.close()
         self._viewer.shutdown()
 
     def invalidate(self):
         """Forget the index and the scene when the data folder changes."""
         self.shutdown()
         self._index = None
+        self._zone = self._day = None
+        self._update_where()
         self._tried = False
         self._viewer._clear_scene()
         self._set_busy(False)

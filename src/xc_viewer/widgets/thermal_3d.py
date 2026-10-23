@@ -9,7 +9,7 @@ import numpy as np
 import pyqtgraph.opengl as gl
 from matplotlib import colormaps
 from OpenGL import GL
-from PyQt6.QtCore import QElapsedTimer, QEvent, Qt
+from PyQt6.QtCore import QElapsedTimer, QEvent, Qt, pyqtSignal
 from PyQt6.QtGui import QMatrix4x4, QVector3D
 from PyQt6.QtWidgets import (
     QCheckBox,
@@ -29,9 +29,15 @@ from .map_focus import MapFocus
 from .terrain_surface import TerrainSurface
 from .thermal_plane import _Worker
 
+#: A press and a release this many pixels apart (Manhattan distance) make a click.
+CLICK_PX = 4
+
 
 class TerrainView(gl.GLViewWidget):
     """Navigate with trackpad gestures, mouse drags and camera-relative movement."""
+
+    #: A left click without drag or modifier, at the pixel (x, y) of this widget.
+    clicked = pyqtSignal(float, float)
 
     def __init__(self, parent=None):
         """Inherit the application's shared OpenGL format and depth buffer."""
@@ -48,11 +54,27 @@ class TerrainView(gl.GLViewWidget):
             Qt.Key.Key_E,
         ]
         self._movement_clock = QElapsedTimer()
+        self._pressed = None
 
     def mousePressEvent(self, event):  # noqa: N802
         """Give keyboard movement to the scene when a drag starts."""
         self.setFocus(Qt.FocusReason.MouseFocusReason)
+        left = event.button() == Qt.MouseButton.LeftButton
+        self._pressed = event.position() if left else None
         super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):  # noqa: N802
+        """Report a click: a left press and release at nearly the same pixel."""
+        super().mouseReleaseEvent(event)
+        pressed, self._pressed = self._pressed, None
+        position = event.position()
+        if (
+            pressed is not None
+            and event.button() == Qt.MouseButton.LeftButton
+            and event.modifiers() == Qt.KeyboardModifier.NoModifier
+            and (position - pressed).manhattanLength() <= CLICK_PX
+        ):
+            self.clicked.emit(position.x(), position.y())
 
     def paintGL(self, *args, **kwargs):  # noqa: N802
         """Clear depth correctly after a frame with translucent point markers."""
