@@ -449,14 +449,16 @@ the time both flights are between departure and landing. Only runs of at least
 <li><b>Calibration of &tau;*:</b> the shortest duration at which chance explains at
 most a share q of the intervals, chance being measured on pairs whose second flight is
 shifted in time by more than 2&delta;.</li>
-<li><b>Configuration:</b> a set of flights that is a connected component of the graph
-of active pair intervals over a maximal interval of time.</li>
-<li><b>Episode:</b> configurations linked when one starts at the instant another ends
-and they share a flight, with their chains.</li>
-<li><b>Reeb graph:</b> the configurations of an episode as its edges, without the
-edges of single pilots (Buchin et al., 2015), so an episode is one connected piece. A
-configuration is drawn on the free lane nearest to those it continues, weighted by the
-pilots it keeps from each.</li>
+<li><b>Configuration:</b> a connected component of at least two flights of the graph
+of active pair intervals at an instant, with its edges.</li>
+<li><b>Group:</b> a set of flights that is a connected component of that graph over a
+maximal interval of time.</li>
+<li><b>Episode:</b> groups linked when one starts at the instant another ends and they
+share a flight, with their chains.</li>
+<li><b>Reeb graph:</b> the groups of an episode as its edges, without the edges of
+single pilots (Buchin et al., 2015), so an episode is one connected piece. A group is
+drawn on the free lane nearest to those it continues, weighted by the pilots it keeps
+from each.</li>
 <li><b>Distance of an episode:</b> the longest straight line one member flew between
 entering and leaving a stretch of the episode.</li>
 <li><b>Time:</b> every comparison uses UTC; the tables show French local time.</li>

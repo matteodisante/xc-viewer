@@ -535,17 +535,18 @@ def groups_info() -> str:
     return f"""
 <p>Pilots who flew together, found from their tracks. Two pilots are in contact when
 one of them flies where the other was a few minutes before or after, close in position
-and in altitude. At each instant, a group is a set of pilots joined by contacts.</p>
+and in altitude. At each instant, a <b>configuration</b> is a set of pilots joined by
+contacts, with those contacts.</p>
 
-<h3>Configurations and episodes</h3>
+<h3>Groups and episodes</h3>
 <ul>
-<li>A <b>configuration</b> is a fixed set of pilots that stays one group; it ends as
-soon as someone joins or leaves.</li>
-<li>An <b>episode</b> chains configurations without a break: each one starts when the
-previous one ends and keeps at least one of its pilots. A group that splits or merges
-stays in its episode; a group that dissolves ends it.</li>
-<li>Episodes can be ranked by distinct flights, by their largest configuration, by
-duration or by the distance covered.</li>
+<li>A <b>group</b> is a fixed set of pilots that stays joined by contacts; it ends as
+soon as someone joins or leaves, while its contacts may change.</li>
+<li>An <b>episode</b> chains groups without a break: each one starts when the previous
+one ends and keeps at least one of its pilots. Splits and merges stay in the episode;
+it ends when its last group dissolves.</li>
+<li>Episodes can be ranked by distinct flights, by their largest group, by duration or
+by the distance covered.</li>
 <li>The <b>zone</b> of an episode is the 10 km cell, as in Routes, from which most of
 its pilots took off. It needs the census of cleaned tracks.</li>
 </ul>
@@ -558,26 +559,26 @@ yellow in the episode, if you prefer). Choose <b>Tracks up to the instant</b> to
 each one only up to the chosen instant, or <b>Trail only</b> to draw just its bright
 trail, without the way flown before.</li>
 <li>Dots are the members at the chosen instant, each with its number and a bright trail
-of its last minutes. A large dot is in a configuration and takes its colour; a line in
-the same colour joins two pilots in contact. Two configurations in progress together
-never share a colour. A small grey dot flies alone; a white dot is in a configuration
+of its last minutes. A large dot is in a group and takes its colour; a line in
+the same colour joins two pilots in contact. Two groups in progress together
+never share a colour. A small grey dot flies alone; a white dot is in a group
 of another episode of the day, which these members join after leaving this one.</li>
 <li>Beside the scene, the <b>contact graph</b> at the chosen instant: one dot per
 member, numbered and coloured as in the scene, a line for each pair in contact. Members
 not in flight are faded.</li>
-<li>Under the slider: the configurations in progress, listed by member numbers, and the
+<li>Under the slider: the groups in progress, listed by member numbers, and the
 other episodes of the same day.</li>
 <li>The <b>Timeline</b> tab draws one row per member over the whole episode: pale before
-departure, grey when alone, in the colour of its configuration when in a group, and
-white in a configuration of another episode. Its white cursor is the chosen
+departure, grey when alone, in the colour of its group when in one, and
+white in a group of another episode. Its white cursor is the chosen
 instant.</li>
-<li>The <b>Reeb graph</b> tab draws the episode as its configurations in time: one bar
+<li>The <b>Reeb graph</b> tab draws the episode as its groups in time: one bar
 each, thicker with more members, its number of members above it. A white line joins a
-configuration to the next one that keeps some of its pilots, so splits, merges and
+group to the next one that keeps some of its pilots, so splits, merges and
 pilots joining or leaving show as branches; dots mark starts and ends. <b>Live</b>
 draws it up to the chosen instant, <b>Whole episode</b> all of it.</li>
 <li>Columns: takeoff and landing in French time, the minutes spent in the episode, and
-the number of its configurations a member belongs to.</li>
+the number of its groups a member belongs to.</li>
 <li>The colours on the ground are the thermal hours per km&sup2; of all archived
 flights, as in Routes, not the weather of that day.</li>
 </ul>
@@ -606,10 +607,10 @@ The filters above still apply.</li>
 <b>Timeline</b> or <b>Reeb graph</b> tab. Set the replay speed and the trail length next
 to the slider. The replay holds while a mouse button is down, so that dragging the view
 or the slider is smooth.</li>
-<li>Click a pilot's dot in the scene to follow its configuration: the camera keeps on
-its members, even after the configuration ends. Tick <b>Only the focused
-configuration</b> to hide the other members, and click <b>Clear focus</b> to see and
-follow everyone again. A pilot in no configuration at that instant cannot be
+<li>Click a pilot's dot in the scene to follow its group: the camera keeps on
+its members, even after the group ends. Tick <b>Only the focused
+group</b> to hide the other members, and click <b>Clear focus</b> to see and
+follow everyone again. A pilot in no group at that instant cannot be
 picked.</li>
 <li>Click <b>Who is who</b> for the pilot, flight ID, club, wing and sites of each
 member number; the window can stay open during the replay.</li>
@@ -617,7 +618,7 @@ member number; the window can stay open during the replay.</li>
 <b>Whole episode</b>.</li>
 <li>In the <b>Timeline</b> tab, choose the colours of dots and tracks, whether
 tracks are drawn whole, only up to the instant or as the bright trail alone, the
-numbers, and whether the camera follows the group.</li>
+numbers, and whether the camera follows the members.</li>
 <li>Rotate, move and zoom as in Routes. Select rows to highlight members, untick rows
 to hide them, or pick <b>Selected rows only</b>.</li>
 </ol>
