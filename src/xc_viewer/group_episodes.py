@@ -2,8 +2,8 @@
 
 The tables are those the group identification of xc-lab writes, exported to the
 ``groups/`` folder of the data folder: every flight with its UTC clock, the pair
-intervals of contact, the configurations (a fixed set of at least two flights that
-stays one group over a maximal interval), the episodes (chains of configurations, each
+intervals of contact, the groups (a fixed set of at least two flights that stays one
+connected component over a maximal interval), the episodes (chains of groups, each
 starting when the previous one ends and sharing a member with it), the membership of
 every flight and, when present, the distance covered by every episode.
 """
@@ -27,11 +27,11 @@ from .sqlite import connect
 from .thermal_geometry import continuous_edges, project, unproject
 from .thermal_index import _check_cancel
 
-TABLES = ("flights", "pair_intervals", "configurations", "membership", "episodes")
+TABLES = ("flights", "pair_intervals", "groups", "membership", "episodes")
 DISCIPLINE_NAMES = {"para": "paragliders", "hang": "hang gliders"}
 ORDERS = {
     "flights": "Most flights",
-    "largest": "Largest configuration",
+    "largest": "Largest group",
     "duration": "Longest",
     "distance": "Longest distance",
 }
@@ -67,7 +67,7 @@ class GroupTables:
     folder: Path
     flights: pd.DataFrame
     pairs: pd.DataFrame
-    configurations: pd.DataFrame
+    groups: pd.DataFrame
     membership: pd.DataFrame
     episodes: pd.DataFrame
     calibration: dict
@@ -91,7 +91,7 @@ def load_tables(folder):
     flights["discipline"] = flights.discipline.map(DISCIPLINE_NAMES).fillna(
         flights.discipline
     )
-    configurations = read["configurations"]
+    groups = read["groups"]
     episodes = read["episodes"].copy()
     episodes["duration_s"] = episodes.t_end - episodes.t_start
     distance = folder / "episode_distance.parquet"
@@ -100,7 +100,7 @@ def load_tables(folder):
         episodes = episodes.merge(d, on="episode_id", how="left")
     else:
         episodes["distance_m"] = np.nan
-    members = configurations[["episode_id", "members"]].explode("members")
+    members = groups[["episode_id", "members"]].explode("members")
     members = members.merge(
         flights[["flight", "discipline"]], left_on="members", right_on="flight"
     )
@@ -111,7 +111,7 @@ def load_tables(folder):
         folder,
         flights,
         read["pair_intervals"],
-        configurations,
+        groups,
         read["membership"],
         episodes,
         json.loads(calibration.read_text()) if calibration.is_file() else {},
@@ -130,7 +130,7 @@ def attach_zones(tables, index_flights):
         index_flights[["discipline", "flight_id", "start_ix", "start_iy"]],
         on=["discipline", "flight_id"],
     )
-    members = tables.configurations[["episode_id", "members"]].explode("members")
+    members = tables.groups[["episode_id", "members"]].explode("members")
     members = members.assign(flight=members.members.astype(int))
     members = (
         members[["episode_id", "flight"]].drop_duplicates().merge(cells, on="flight")
@@ -236,7 +236,7 @@ class Episode:
 
     row: pd.Series
     members: pd.DataFrame
-    configurations: pd.DataFrame
+    groups: pd.DataFrame
     pairs: pd.DataFrame
     membership: pd.DataFrame
     day: pd.DataFrame
@@ -249,10 +249,10 @@ class Episode:
         """First and last UTC second of the replay."""
         return self.row.t_start - MARGIN_S, self.row.t_end + MARGIN_S
 
-    def configurations_at(self, t):
-        """The configurations of this episode in progress at ``t``."""
-        c = self.configurations
-        return c[(c.t_start <= t) & (t < c.t_end)]
+    def groups_at(self, t):
+        """The groups of this episode in progress at ``t``."""
+        g = self.groups
+        return g[(g.t_start <= t) & (t < g.t_end)]
 
     def edges_at(self, t):
         """Pairs of members whose interval of contact contains ``t``."""
@@ -291,26 +291,25 @@ def split_inside(piece, intervals):
     return pieces, [bool(inside[a]) for a in starts]
 
 
-def reeb_graph(configurations):
+def reeb_graph(groups):
     """The Reeb graph of an episode, without the edges of single members.
 
-    Every configuration is an edge on a lane: among the lanes free when it starts and
-    one new lane, the nearest to the mean lane of the configurations it continues,
-    weighted by the members it keeps from each; at a split the larger part goes first.
-    Returns the edges (conf_id, t0, t1, n, lane) and the links (t, lane0, lane1) from a
-    configuration to each one that starts when it ends and keeps a member of it.
+    Every group is an edge on a lane: among the lanes free when it starts and one new
+    lane, the nearest to the mean lane of the groups it continues, weighted by the
+    members it keeps from each; at a split the larger part goes first. Returns the
+    edges (group_id, t0, t1, n, lane) and the links (t, lane0, lane1) from a group to
+    each one that starts when it ends and keeps a member of it.
     """
-    confs = configurations.assign(larger=-configurations.n).sort_values(
+    gs = groups.assign(larger=-groups.n).sort_values(
         ["t_start", "larger"], kind="stable"
     )
     members = {
-        c: {int(f) for f in m}
-        for c, m in zip(confs.conf_id, confs.members, strict=True)
+        c: {int(f) for f in m} for c, m in zip(gs.group_id, gs.members, strict=True)
     }
     lane, free_at, links = {}, [], []
-    for c in confs.itertuples():
-        before = confs.conf_id[confs.t_end == c.t_start]
-        kept = [(lane[p], len(members[p] & members[c.conf_id])) for p in before]
+    for c in gs.itertuples():
+        before = gs.group_id[gs.t_end == c.t_start]
+        kept = [(lane[p], len(members[p] & members[c.group_id])) for p in before]
         kept = [(lane_, k) for lane_, k in kept if k]
         want = (
             sum(lane_ * k for lane_, k in kept) / sum(k for _, k in kept)
@@ -323,29 +322,29 @@ def reeb_graph(configurations):
             free_at.append(c.t_end)
         else:
             free_at[here] = c.t_end
-        lane[c.conf_id] = here
+        lane[c.group_id] = here
         links += [(c.t_start, lane_, here) for lane_, _ in kept]
     edges = pd.DataFrame(
         {
-            "conf_id": confs.conf_id.to_numpy(int),
-            "t0": confs.t_start.to_numpy(float),
-            "t1": confs.t_end.to_numpy(float),
-            "n": confs.n.to_numpy(int),
-            "lane": confs.conf_id.map(lane).to_numpy(int),
+            "group_id": gs.group_id.to_numpy(int),
+            "t0": gs.t_start.to_numpy(float),
+            "t1": gs.t_end.to_numpy(float),
+            "n": gs.n.to_numpy(int),
+            "lane": gs.group_id.map(lane).to_numpy(int),
         }
     )
     return edges, pd.DataFrame(links, columns=["t", "lane0", "lane1"], dtype=float)
 
 
 def episode(tables, episode_id):
-    """The members, configurations, contacts and membership of one episode."""
+    """The members, groups, contacts and membership of one episode."""
     row = tables.episodes.set_index("episode_id").loc[episode_id]
     row = row.copy()
     row["episode_id"] = episode_id
-    configurations = tables.configurations[
-        tables.configurations.episode_id == episode_id
-    ].sort_values("t_start", kind="stable")
-    members = sorted({int(f) for m in configurations.members for f in m})
+    groups = tables.groups[tables.groups.episode_id == episode_id].sort_values(
+        "t_start", kind="stable"
+    )
+    members = sorted({int(f) for m in groups.members for f in m})
     flights = tables.flights.set_index("flight").loc[members].reset_index()
     p = tables.pairs
     pairs = p[
@@ -356,7 +355,7 @@ def episode(tables, episode_id):
     ]
     membership = tables.membership[tables.membership.flight.isin(members)]
     day = tables.episodes[tables.episodes.date == row.date]
-    return Episode(row, flights, configurations, pairs, membership, day)
+    return Episode(row, flights, groups, pairs, membership, day)
 
 
 def identify(members, disciplines):
@@ -449,7 +448,7 @@ def load_episode_scene(
         for p in t.pieces:
             p[:, 1:3] -= origin
     ep.tracks = tracks
-    m = ep.membership[ep.membership.conf_id.isin(ep.configurations.conf_id)]
+    m = ep.membership[ep.membership.group_id.isin(ep.groups.group_id)]
     lines = []
     for f in ep.members.flight:
         stretches = m.loc[m.flight == f, ["t_start", "t_end"]].to_numpy(float)

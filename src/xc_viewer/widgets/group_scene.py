@@ -37,7 +37,7 @@ from .route_annotations import screen_points
 from .route_comparison import RouteComparison, _flight_datetime
 from .route_lines import RouteLine
 
-#: Colours of the configurations of an episode, in the order they start.
+#: Colours of the groups of an episode, in the order they start.
 PALETTE = (
     "#1f77b4",
     "#ff7f0e",
@@ -60,10 +60,10 @@ TRACK = "#edf6ff"
 EPISODE = "#ffd23f"  # every track while its flight is in the episode
 SELECTED = "#1464ff"
 CONTACT = "#ffffff"  # contacts when the dots are coloured by pilot
-OTHER = "#ffffff"  # members in a configuration of another episode
+OTHER = "#ffffff"  # members in a group of another episode
 #: A click picks the member whose dot is at most this many pixels away.
 PICK_PX = 18
-FOCUS_HINT = "Click a pilot to follow its configuration"
+FOCUS_HINT = "Click a pilot to follow its group"
 SPEEDS = (10, 30, 60, 120, 300)
 STEP_S = 5
 TICK_MS = 50
@@ -96,21 +96,19 @@ def _segments(pieces):
     return np.concatenate(pairs).astype(np.float32) if pairs else None
 
 
-def _conf_colours(configurations):
-    """A colour of PALETTE per configuration, taken in turn.
+def _group_colours(groups):
+    """A colour of PALETTE per group, taken in turn.
 
-    Each differs from the colours of the configurations in progress when it starts and
+    Each differs from the colours of the groups in progress when it starts and
     of those it continues.
     """
     out, turn = {}, 0
-    for c in configurations.sort_values("t_start", kind="stable").itertuples():
-        near = configurations[
-            (configurations.t_start <= c.t_start) & (configurations.t_end >= c.t_start)
-        ]
-        busy = {out[d] for d in near.conf_id if d in out}
+    for c in groups.sort_values("t_start", kind="stable").itertuples():
+        near = groups[(groups.t_start <= c.t_start) & (groups.t_end >= c.t_start)]
+        busy = {out[d] for d in near.group_id if d in out}
         free = [k % len(PALETTE) for k in range(turn, turn + len(PALETTE))]
         pick = next((k for k in free if PALETTE[k] not in busy), turn % len(PALETTE))
-        out[int(c.conf_id)] = PALETTE[pick]
+        out[int(c.group_id)] = PALETTE[pick]
         turn = pick + 1
     return out
 
@@ -224,7 +222,7 @@ class EpisodeScene(RouteComparison):
     """Terrain, imagery and tracks of Routes, with one episode replayed on them.
 
     At the chosen instant every member is a numbered dot in the colour of its
-    configuration, joined to the members it is in contact with and followed by the trail
+    group, joined to the members it is in contact with and followed by the trail
     of its last minutes; tracks are whole or drawn up to the instant. Beside the scene,
     the contact graph G(t). Under it, the membership of every member and the Reeb graph
     of the episode, each with a cursor that moves the instant.
@@ -236,7 +234,7 @@ class EpisodeScene(RouteComparison):
         self._episode = None
         self._markers = self._numbers_item = self._flown_at = None
         self._edges, self._trails, self._flown = {}, [], []
-        self._conf_colour = {}
+        self._group_colour = {}
         self._reeb_data = None
         self._now = 0.0
         self._focus, self._located, self._clicks = (), {}, None
@@ -246,7 +244,7 @@ class EpisodeScene(RouteComparison):
         self._line_width.setValue(1.0)
         self._legend.setText(
             "Dots: members at the instant, large and in the colour of their "
-            "configuration, white in another episode, small and grey alone · Lines "
+            "group, white in another episode, small and grey alone · Lines "
             "between dots: pairs in contact, in the same colour · Tracks: one colour "
             "per pilot, faint outside the episode · Bright trail: last minutes · "
             "○ ■ Start and end of the replay"
@@ -262,12 +260,12 @@ class EpisodeScene(RouteComparison):
                 "Takeoff (Paris)",
                 "Landing (Paris)",
                 "In the episode (min)",
-                "Configurations",
+                "Groups",
             ]
         )
         self._table.horizontalHeaderItem(0).setToolTip(
             "Tick to show a member; untick to hide it. The number labels it in the "
-            "scene, the timeline and the list of configurations."
+            "scene, the timeline and the list of groups."
         )
         self._play = QPushButton("Play")
         self._play.setCheckable(True)
@@ -316,9 +314,9 @@ class EpisodeScene(RouteComparison):
     def _build_timeline(self):
         """The tab of the membership timeline and display options, beside the table."""
         self._colour_by = QComboBox()
-        self._colour_by.addItem("Dots by configuration", "configuration")
+        self._colour_by.addItem("Dots by group", "group")
         self._colour_by.addItem("Dots by pilot", "pilot")
-        self._colour_by.addItem("Dots yellow in a configuration", "episode")
+        self._colour_by.addItem("Dots yellow in a group", "episode")
         self._track_by = QComboBox()
         self._track_by.addItem("Tracks by pilot", "pilot")
         self._track_by.addItem("Tracks yellow in the episode", "episode")
@@ -332,11 +330,11 @@ class EpisodeScene(RouteComparison):
         self._numbers = QCheckBox("Numbers")
         self._numbers.setChecked(True)
         self._numbers.setToolTip("Write the member number next to each dot")
-        self._follow = QCheckBox("Follow the group")
+        self._follow = QCheckBox("Follow the members")
         self._follow.setToolTip("Keep the camera centred on the members in flight")
-        self._focus_only = QCheckBox("Only the focused configuration")
+        self._focus_only = QCheckBox("Only the focused group")
         self._focus_only.setToolTip(
-            "Hide the members that are not in the configuration picked with a click"
+            "Hide the members that are not in the group picked with a click"
         )
         self._focus_clear = QPushButton("Clear focus")
         self._focus_clear.setToolTip("Follow and show every member again")
@@ -359,7 +357,7 @@ class EpisodeScene(RouteComparison):
         options = FlowLayout()
         for widget in (*controls, self._focus_clear, self._focus_text):
             options.addWidget(widget)
-        self._focus_clear.clicked.connect(lambda: self.focus_configuration(None))
+        self._focus_clear.clicked.connect(lambda: self.focus_group(None))
         self._reset_focus()
         page = QWidget()
         column = QVBoxLayout(page)
@@ -385,8 +383,8 @@ class EpisodeScene(RouteComparison):
         self._reeb_mode.addItem("Live: up to the instant", "live")
         self._reeb_mode.addItem("Whole episode", "whole")
         legend = QLabel(
-            "Bars: configurations, thicker with more members (number above) · White "
-            "lines: a configuration continuing into the next (split, merge, a member "
+            "Bars: groups, thicker with more members (number above) · White "
+            "lines: a group continuing into the next (split, merge, a member "
             "joining or leaving) · Dots: starts and ends"
         )
         legend.setWordWrap(True)
@@ -452,7 +450,7 @@ class EpisodeScene(RouteComparison):
         ep = self._episode
         for label in self._graph_labels:
             self._graph.removeItem(label)
-        m = ep.membership[ep.membership.conf_id.isin(ep.configurations.conf_id)]
+        m = ep.membership[ep.membership.group_id.isin(ep.groups.group_id)]
         first = m.groupby("flight").t_start.min()
         flights = ep.members.flight.to_list()
         order = sorted(range(len(flights)), key=lambda k: first.get(flights[k], np.inf))
@@ -473,7 +471,7 @@ class EpisodeScene(RouteComparison):
     def set_episode(self, scene, episode):
         """Draw a scene of `group_episodes.load_episode_scene` at the replay start."""
         self._episode = episode
-        self._conf_colour = _conf_colours(episode.configurations)
+        self._group_colour = _group_colours(episode.groups)
         self.set_scene(scene)
         if self._clicks is not self._view:
             self._view.clicked.connect(self._picked)
@@ -500,7 +498,7 @@ class EpisodeScene(RouteComparison):
             self._scene_items.append(item)
         self._scale_changed()
         self._draw_strip()
-        self._reeb_data = reeb_graph(episode.configurations)
+        self._reeb_data = reeb_graph(episode.groups)
         self._draw_reeb()
         self._place_graph()
         low, high = episode.window
@@ -527,7 +525,7 @@ class EpisodeScene(RouteComparison):
         return line
 
     def _draw_strip(self):
-        """One row per member: its local phase, solo time and configurations."""
+        """One row per member: its local phase, solo time and groups."""
         ep = self._episode
         self._strip.clear()
         low, high = ep.window
@@ -536,8 +534,8 @@ class EpisodeScene(RouteComparison):
         m = ep.membership[(ep.membership.t_end > low) & (ep.membership.t_start < high)]
         colours = {"L": LOCAL, "S": SOLO}
         brushes = [
-            self._conf_colour.get(int(c), OTHER) if s == "G" else colours[s]
-            for s, c in zip(m.state, m.conf_id, strict=True)
+            self._group_colour.get(int(c), OTHER) if s == "G" else colours[s]
+            for s, c in zip(m.state, m.group_id, strict=True)
         ]
         self._strip.addItem(
             pg.BarGraphItem(
@@ -558,13 +556,13 @@ class EpisodeScene(RouteComparison):
         self._strip.addItem(self._cursor)
 
     def _draw_reeb(self):
-        """The configurations on their lanes, in the colours of the scene."""
+        """The groups on their lanes, in the colours of the scene."""
         ep = self._episode
         self._reeb.clear()
         if ep is None or self._reeb_data is None:
             return
         edges, links = self._reeb_data
-        by_conf = self._colour_by.currentData() == "configuration"
+        by_group = self._colour_by.currentData() == "group"
         thick = 0.15 + 0.6 * edges.n / edges.n.max()
         self._reeb.addItem(
             pg.BarGraphItem(
@@ -573,7 +571,8 @@ class EpisodeScene(RouteComparison):
                 y=edges.lane.to_numpy(float),
                 height=thick.to_numpy(),
                 brushes=[
-                    self._conf_colour[c] if by_conf else EPISODE for c in edges.conf_id
+                    self._group_colour[c] if by_group else EPISODE
+                    for c in edges.group_id
                 ],
                 pen=None,
             )
@@ -704,7 +703,7 @@ class EpisodeScene(RouteComparison):
             self._timer.start()
 
     def _reset_focus(self):
-        """No configuration is focused."""
+        """No group is focused."""
         self._focus = ()
         self._focus_only.blockSignals(True)
         self._focus_only.setChecked(False)
@@ -713,17 +712,17 @@ class EpisodeScene(RouteComparison):
         self._focus_clear.setEnabled(False)
         self._focus_text.setText(FOCUS_HINT)
 
-    def focus_configuration(self, conf_id):
-        """Follow the members of configuration `conf_id` with the camera; None clears.
+    def focus_group(self, group_id):
+        """Follow the members of group `group_id` with the camera; None clears.
 
-        The focus is the set of members of the configuration and stays when it ends.
+        The focus is the set of members of the group and stays when it ends.
         With the box ticked, the other members are hidden.
         """
         ep = self._episode
-        if conf_id is None or ep is None:
+        if group_id is None or ep is None:
             self._reset_focus()
         else:
-            row = ep.configurations[ep.configurations.conf_id == conf_id].iloc[0]
+            row = ep.groups[ep.groups.group_id == group_id].iloc[0]
             self._focus = tuple(int(f) for f in row.members)
             number = {f: k + 1 for k, f in enumerate(ep.members.flight)}
             self._focus_only.setEnabled(True)
@@ -735,7 +734,7 @@ class EpisodeScene(RouteComparison):
         self._style_changed()
 
     def _picked(self, x, y):
-        """A click at pixel (x, y) of the scene: focus the configuration under it."""
+        """A click at pixel (x, y) of the scene: focus the group under it."""
         ep = self._episode
         if ep is None or not self._located:
             return
@@ -746,13 +745,13 @@ class EpisodeScene(RouteComparison):
         k = nearest_member(points, visible, x, y)
         if k is None:
             return
-        confs = ep.configurations_at(self._now)
-        mine = confs[confs.members.map(lambda members: flights[k] in members)]
+        gs = ep.groups_at(self._now)
+        mine = gs[gs.members.map(lambda members: flights[k] in members)]
         if mine.empty:
             number = ep.members.flight.to_list().index(flights[k]) + 1
-            self._focus_text.setText(f"Member {number} is in no configuration now")
+            self._focus_text.setText(f"Member {number} is in no group now")
             return
-        self.focus_configuration(int(mine.conf_id.iloc[0]))
+        self.focus_group(int(mine.group_id.iloc[0]))
 
     def _shown(self):
         """Members drawn: ticked, selected when the mode asks, and focused if asked."""
@@ -767,12 +766,12 @@ class EpisodeScene(RouteComparison):
         ]
 
     def _colours(self, t):
-        """Colour of every member at `t`, and whether it is in a configuration."""
+        """Colour of every member at `t`, and whether it is in a group."""
         ep = self._episode
-        conf = {}
-        for c in ep.configurations_at(t).itertuples():
+        in_group = {}
+        for c in ep.groups_at(t).itertuples():
             for f in c.members:
-                conf[int(f)] = self._conf_colour[int(c.conf_id)]
+                in_group[int(f)] = self._group_colour[int(c.group_id)]
         other = set(self._elsewhere(t))
         mode = self._colour_by.currentData()
         out = []
@@ -782,14 +781,14 @@ class EpisodeScene(RouteComparison):
             elif f in other:
                 colour = OTHER
             elif mode == "episode":
-                colour = EPISODE if f in conf else SOLO
+                colour = EPISODE if f in in_group else SOLO
             else:
-                colour = conf.get(f, SOLO)
-            out.append((colour, f in conf or f in other))
+                colour = in_group.get(f, SOLO)
+            out.append((colour, f in in_group or f in other))
         return out
 
     def _elsewhere(self, t):
-        """Members in a configuration of another episode at `t`."""
+        """Members in a group of another episode at `t`."""
         m = self._episode.membership
         at = m[(m.t_start <= t) & (t < m.t_end) & (m.state == "G")]
         return at.flight[at.episode_id != self._episode.row.episode_id].to_list()
@@ -803,16 +802,16 @@ class EpisodeScene(RouteComparison):
     def _contacts(self, t, index, colours):
         """Pairs in contact at `t` among `index` (flight -> k), by line colour.
 
-        A line takes the colour of the dots of its configuration, or white when the dots
+        A line takes the colour of the dots of its group, or white when the dots
         show pilots.
         """
         by_pilot = self._colour_by.currentData() == "pilot"
-        groups = {}
+        by_colour = {}
         for a, b in self._episode.edges_at(t):
             if a in index and b in index:
                 colour = CONTACT if by_pilot else colours[index[a]][0]
-                groups.setdefault(colour, []).append((index[a], index[b]))
-        return groups
+                by_colour.setdefault(colour, []).append((index[a], index[b]))
+        return by_colour
 
     def _redraw(self):
         """Markers, numbers, contacts, trails, flown tracks, camera and text."""
@@ -866,11 +865,11 @@ class EpisodeScene(RouteComparison):
             [where[flights[k]] for k in numbered], [str(k + 1) for k in numbered]
         )
         index = {f: k for k, f in enumerate(flights) if f in where}
-        groups = self._contacts(t, index, colours)
+        by_colour = self._contacts(t, index, colours)
         for colour, line in self._edges.items():
             ends = [
                 (where[flights[i]], where[flights[j]])
-                for i, j in groups.get(colour, [])
+                for i, j in by_colour.get(colour, [])
             ]
             line.setVisible(bool(ends))
             if ends:
@@ -898,9 +897,9 @@ class EpisodeScene(RouteComparison):
         ep = self._episode
         if len(self._node_xy) != len(flights):
             return
-        groups = self._contacts(t, {f: k for k, f in enumerate(flights)}, colours)
+        by_colour = self._contacts(t, {f: k for k, f in enumerate(flights)}, colours)
         for colour, item in self._graph_edges.items():
-            ends = self._node_xy[np.array(groups.get(colour, []), int).ravel()]
+            ends = self._node_xy[np.array(by_colour.get(colour, []), int).ravel()]
             item.setData(ends[:, 0], ends[:, 1], connect="pairs")
         brushes, sizes = [], []
         for k, (f, (colour, grouped)) in enumerate(zip(flights, colours, strict=True)):
@@ -910,30 +909,30 @@ class EpisodeScene(RouteComparison):
             brushes.append(pg.mkBrush(fill))
             sizes.append(16 if grouped else 11)
         self._graph_nodes.setData(pos=self._node_xy, brush=brushes, size=sizes)
-        count = sum(len(pairs) for pairs in groups.values())
+        count = sum(len(pairs) for pairs in by_colour.values())
         plural = "s" if count != 1 else ""
         self._graph.setTitle(f"Contact graph: {count} pair{plural} in contact")
 
     def _describe(self, t, flights):
-        """The configurations of this episode and the episodes of the day at `t`."""
+        """The groups of this episode and the episodes of the day at `t`."""
         ep = self._episode
         number = {f: k + 1 for k, f in enumerate(flights)}
-        confs = ep.configurations_at(t)
+        gs = ep.groups_at(t)
         parts = []
-        for c in confs.itertuples():
+        for c in gs.itertuples():
             members = ", ".join(
                 str(number[int(f)])
                 for f in sorted(c.members, key=lambda f: number[int(f)])
             )
             since = _flight_datetime(c.t_start).split(" ")[1]
             parts.append(
-                f'<span style="color:{self._conf_colour[int(c.conf_id)]}">●</span> '
+                f'<span style="color:{self._group_colour[int(c.group_id)]}">●</span> '
                 f"[{members}] since {since}"
             )
         flying = sum(ep.state_of(f, t) in ("S", "G") for f in flights)
-        plural = "s" if len(confs) != 1 else ""
+        plural = "s" if len(gs) != 1 else ""
         text = (
-            f"<b>{len(confs)} configuration{plural}</b> of this episode · "
+            f"<b>{len(gs)} group{plural}</b> of this episode · "
             f"{flying} of {len(flights)} members flying after departure"
         )
         if parts:
@@ -943,7 +942,7 @@ class EpisodeScene(RouteComparison):
             text += (
                 "<br><b>In another episode:</b> "
                 + ", ".join(map(str, away))
-                + " (white: a configuration not linked to this one)"
+                + " (white: a group not linked to this one)"
             )
         others = ep.episodes_at(t)
         others = others[others.episode_id != ep.row.episode_id]
@@ -959,10 +958,10 @@ class EpisodeScene(RouteComparison):
     def _populate_table(self, scene):
         """One row per member, its number in the colour of the pilot."""
         ep = self._episode
-        confs = ep.configurations
-        mine = ep.membership[ep.membership.conf_id.isin(confs.conf_id)]
+        gs = ep.groups
+        mine = ep.membership[ep.membership.group_id.isin(gs.group_id)]
         in_episode = (mine.t_end - mine.t_start).groupby(mine.flight).sum()
-        counts = confs.explode("members").groupby("members").size()
+        counts = gs.explode("members").groupby("members").size()
         self._table.blockSignals(True)
         self._table.setRowCount(len(ep.members))
         for i, row in enumerate(ep.members.itertuples(index=False)):
@@ -995,14 +994,14 @@ class EpisodeScene(RouteComparison):
         end = _flight_datetime(row.t_end).split(" ")[1]
         self._summary.setText(
             f"Episode of {row.date}: {_flight_datetime(row.t_start)} to {end} · "
-            f"{int(row.n_flights)} flights, largest configuration {int(row.n_max)}, "
-            f"{int(row.n_config)} configurations{distance}"
+            f"{int(row.n_flights)} flights, largest group {int(row.n_max)}, "
+            f"{int(row.n_groups)} groups{distance}"
         )
 
     def _flight_source(self, scene):
         """Say which flights and which part of them are drawn."""
         return (
-            "Members: every flight in a configuration of the episode, drawn from "
+            "Members: every flight in a group of the episode, drawn from "
             "10 minutes before the episode to 10 minutes after it; gaps not connected. "
         )
 

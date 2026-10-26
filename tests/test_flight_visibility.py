@@ -10,7 +10,7 @@ T0 = 1700000000
 
 
 def _episode(tracks):
-    """Twelve members of one configuration, flying along their tracks in 1000 s."""
+    """Twelve members of one group, flying along their tracks in 1000 s."""
     from xc_viewer.group_episodes import Episode, TimedTrack
 
     members = pd.DataFrame(
@@ -23,8 +23,16 @@ def _episode(tracks):
         }
     )
     window = {"t_start": T0 + 100, "t_end": T0 + 900}
-    configurations = pd.DataFrame(
-        [{"conf_id": 0, "episode_id": 0, "n": 12, "members": list(range(12)), **window}]
+    groups = pd.DataFrame(
+        [
+            {
+                "group_id": 0,
+                "episode_id": 0,
+                "n": 12,
+                "members": list(range(12)),
+                **window,
+            }
+        ]
     )
     row = pd.Series(
         {
@@ -32,13 +40,19 @@ def _episode(tracks):
             "date": "2023-11-14",
             "n_flights": 12,
             "n_max": 12,
-            "n_config": 1,
+            "n_groups": 1,
             "distance_m": np.nan,
             **window,
         }
     )
     membership = pd.DataFrame(
-        {"flight": np.arange(12), "state": "G", "conf_id": 0, "episode_id": 0, **window}
+        {
+            "flight": np.arange(12),
+            "state": "G",
+            "group_id": 0,
+            "episode_id": 0,
+            **window,
+        }
     )
     pairs = pd.DataFrame(
         {"a": np.arange(11), "b": np.arange(1, 12), "t_on": T0 + 100, "t_off": T0 + 900}
@@ -52,9 +66,7 @@ def _episode(tracks):
         )
         for f, t in enumerate(tracks)
     }
-    return Episode(
-        row, members, configurations, pairs, membership, pd.DataFrame([row]), timed
-    )
+    return Episode(row, members, groups, pairs, membership, pd.DataFrame([row]), timed)
 
 
 @pytest.fixture(params=["routes", "groups"])

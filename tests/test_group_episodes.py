@@ -16,7 +16,7 @@ T0 = 1_591_000_000
 
 def write_tables(folder, distance=True):
     """Day one: flights 0 and 1 meet at +600 s, flight 2 joins at +1800 s, all part at
-    +3000 s: one episode of two configurations. Another day: flights 3 and 4."""
+    +3000 s: one episode of two groups. Another day: flights 3 and 4."""
     folder.mkdir(exist_ok=True)
     pd.DataFrame(
         {
@@ -33,14 +33,14 @@ def write_tables(folder, distance=True):
     pd.DataFrame(
         {
             "date": [DAY, DAY, OTHER],
-            "conf_id": [0, 1, 2],
+            "group_id": [0, 1, 2],
             "episode_id": [0, 0, 1],
             "t_start": [T0 + 600, T0 + 1800, T0 + 1000],
             "t_end": [T0 + 1800, T0 + 3000, T0 + 5000],
             "n": [2, 3, 2],
             "members": [[0, 1], [0, 1, 2], [3, 4]],
         }
-    ).to_parquet(folder / "configurations.parquet")
+    ).to_parquet(folder / "groups.parquet")
     pd.DataFrame(
         {
             "episode_id": [0, 1],
@@ -48,7 +48,7 @@ def write_tables(folder, distance=True):
             "t_start": [T0 + 600, T0 + 1000],
             "t_end": [T0 + 3000, T0 + 5000],
             "n_max": [3, 2],
-            "n_config": [2, 1],
+            "n_groups": [2, 1],
             "n_flights": [3, 2],
             "block": [0, 1],
         }
@@ -72,7 +72,7 @@ def write_tables(folder, distance=True):
             (f, T0 + 3000, T0 + 4000, "S", -1, -1),
         ]
     pd.DataFrame(
-        rows, columns=["flight", "t_start", "t_end", "state", "conf_id", "episode_id"]
+        rows, columns=["flight", "t_start", "t_end", "state", "group_id", "episode_id"]
     ).to_parquet(folder / "membership.parquet")
     if distance:
         pd.DataFrame(
@@ -124,9 +124,9 @@ def test_state_of_an_episode_at_every_instant(tmp_path):
     ep = ge.episode(ge.load_tables(write_tables(tmp_path / "out")), 0)
     assert ep.members.flight.tolist() == [0, 1, 2]
     assert ep.window == (T0 + 600 - ge.MARGIN_S, T0 + 3000 + ge.MARGIN_S)
-    assert ep.configurations_at(T0 + 1000).conf_id.tolist() == [0]
-    assert ep.configurations_at(T0 + 2000).conf_id.tolist() == [1]
-    assert ep.configurations_at(T0 + 3000).empty
+    assert ep.groups_at(T0 + 1000).group_id.tolist() == [0]
+    assert ep.groups_at(T0 + 2000).group_id.tolist() == [1]
+    assert ep.groups_at(T0 + 3000).empty
     assert ep.edges_at(T0 + 2000).tolist() == [[0, 1], [1, 2]]
     assert len(ep.edges_at(T0 + 2500)) == 3
     assert ep.episodes_at(T0 + 2000).episode_id.tolist() == [
@@ -217,7 +217,7 @@ def drawn(curves):
     return sum(0 if c.xData is None else len(c.xData) for c in curves)
 
 
-def test_scene_colours_configurations_pilots_and_contacts(qapp, tmp_path):
+def test_scene_colours_groups_pilots_and_contacts(qapp, tmp_path):
     pytest.importorskip("pyqtgraph.opengl")
     from xc_viewer.widgets.group_scene import (
         EPISODE,
@@ -260,12 +260,12 @@ def test_scene_colours_configurations_pilots_and_contacts(qapp, tmp_path):
             view._markers.color, [_rgba(c) for c in (PALETTE[0], PALETTE[0], SOLO)]
         )
         assert view._markers.size.tolist() == [13, 13, 7]  # large in a group
-        assert view._edges[PALETTE[0]].visible()  # in the colour of the configuration
+        assert view._edges[PALETTE[0]].visible()  # in the colour of the group
         assert drawn([view._graph_edges[PALETTE[0]]]) == 2  # members 1 and 2
         assert "1 pair in contact" in view._graph.plotItem.titleLabel.text
         assert view._numbers_item.texts == ["1", "2", "3"]
         text = view._now_text.text()
-        assert "1 configuration" in text and "[1, 2]" in text
+        assert "1 group" in text and "[1, 2]" in text
         view._colour_by.setCurrentIndex(view._colour_by.findData("pilot"))
         np.testing.assert_allclose(view._markers.color, [_rgba(c) for c in PILOTS[:3]])
         assert view._edges["#ffffff"].visible()
@@ -273,7 +273,7 @@ def test_scene_colours_configurations_pilots_and_contacts(qapp, tmp_path):
         np.testing.assert_allclose(
             view._markers.color, [_rgba(c) for c in (EPISODE, EPISODE, SOLO)]
         )
-        view._colour_by.setCurrentIndex(view._colour_by.findData("configuration"))
+        view._colour_by.setCurrentIndex(view._colour_by.findData("group"))
         view.seek(T0 + 2500)
         np.testing.assert_allclose(view._markers.color, [_rgba(PALETTE[1])] * 3)
         assert len(view._edges[PALETTE[1]].pos) == 6  # three pairs in contact
@@ -315,7 +315,7 @@ def test_scene_colours_configurations_pilots_and_contacts(qapp, tmp_path):
             ],
             ignore_index=True,
         )
-        view.seek(T0 + 3200)  # member 3 in a configuration of another episode
+        view.seek(T0 + 3200)  # member 3 in a group of another episode
         np.testing.assert_allclose(view._markers.color[2], _rgba(OTHER))
         assert "In another episode:</b> 3" in view._now_text.text()
         unchecked = view._table.item(2, 0).checkState().Unchecked
@@ -372,14 +372,14 @@ def test_the_view_reports_a_click_but_not_a_drag(qapp):
         view.close()
 
 
-def test_clicking_a_pilot_follows_its_configuration(qapp, tmp_path, monkeypatch):
+def test_clicking_a_pilot_follows_its_group(qapp, tmp_path, monkeypatch):
     from xc_viewer.widgets import group_scene as gs
 
     scene, ep = replay(tmp_path)
     view = gs.EpisodeScene()
     try:
         view.set_episode(scene, ep)
-        view.seek(T0 + 1000)  # flights 0 and 1 in a configuration, flight 2 alone
+        view.seek(T0 + 1000)  # flights 0 and 1 in a group, flight 2 alone
         assert set(view._located) == {0, 1, 2}
         monkeypatch.setattr(  # member k at the pixel (100 k, 0)
             gs,
@@ -393,7 +393,7 @@ def test_clicking_a_pilot_follows_its_configuration(qapp, tmp_path, monkeypatch)
         assert view._focus == () and "Member 3" in view._focus_text.text()
         view._picked(500, 500)  # nothing there
         assert view._focus == ()
-        view._picked(105, 3)  # member 2, in the configuration of members 1 and 2
+        view._picked(105, 3)  # member 2, in the group of members 1 and 2
         assert view._focus == (0, 1) and view._focus_clear.isEnabled()
         assert "1, 2" in view._focus_text.text()
         centre = view._view.opts["center"]
@@ -403,7 +403,7 @@ def test_clicking_a_pilot_follows_its_configuration(qapp, tmp_path, monkeypatch)
         view._focus_only.setChecked(True)  # ...unless asked
         assert view._markers.color[2][3] == 0
         assert view._numbers_item.texts == ["1", "2"]
-        view.seek(T0 + 2500)  # the configuration is over, its members are followed
+        view.seek(T0 + 2500)  # the group is over, its members are followed
         assert view._focus == (0, 1) and view._markers.color[2][3] == 0
         view._focus_clear.click()
         assert view._focus == () and not view._focus_only.isChecked()
@@ -441,17 +441,17 @@ def test_the_replay_holds_while_a_mouse_button_is_down(qapp, monkeypatch):
 def test_reeb_graph_continues_lanes_through_splits_and_merges():
     # 0 splits into 1 (three members) and 2 (one, with 5 joining); 3 forms apart and
     # merges with 1 into 4.
-    confs = pd.DataFrame(
+    groups = pd.DataFrame(
         {
-            "conf_id": [0, 1, 2, 3, 4],
+            "group_id": [0, 1, 2, 3, 4],
             "t_start": [0, 100, 100, 150, 200],
             "t_end": [100, 200, 300, 200, 400],
             "n": [4, 3, 2, 2, 5],
             "members": [[1, 2, 3, 4], [1, 2, 3], [4, 5], [6, 7], [1, 2, 3, 6, 7]],
         }
     )
-    edges, links = ge.reeb_graph(confs)
-    assert dict(zip(edges.conf_id, edges.lane, strict=True)) == {
+    edges, links = ge.reeb_graph(groups)
+    assert dict(zip(edges.group_id, edges.lane, strict=True)) == {
         0: 0,
         1: 0,  # the larger part keeps the lane
         2: 1,
