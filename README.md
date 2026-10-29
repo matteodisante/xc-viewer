@@ -9,7 +9,7 @@ maps.
 ## This branch: `feature/group-episodes`
 
 The **Group flights** tab is rebuilt on the groups found by the delayed-contact method of
-[xc-lab](https://github.com/matteodisante/xc-lab) (`ideas/group-identification`):
+[xc-lab](https://github.com/matteodisante/xc-lab) (`methods/group-identification`):
 
 - The tables are read from the `groups/` folder of the data folder, where xc-lab's
   `export_viewer.py` copies one run with its `PARAMETERS.md`.
