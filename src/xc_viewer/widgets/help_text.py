@@ -614,6 +614,8 @@ follow everyone again. A pilot in no group at that instant cannot be
 picked.</li>
 <li>Click <b>Who is who</b> for the pilot, flight ID, club, wing and sites of each
 member number; the window can stay open during the replay.</li>
+<li>Click <b>Save image…</b> to write the 3D view, as it is now, to a PNG twice as
+large as on screen.</li>
 <li>In the <b>Reeb graph</b> tab, pick <b>Live</b> to watch it grow with the replay, or
 <b>Whole episode</b>.</li>
 <li>In the <b>Timeline</b> tab, choose the colours of dots and tracks, whether

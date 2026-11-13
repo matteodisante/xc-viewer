@@ -28,6 +28,9 @@ class TerrainDetail(QObject):
         """Nothing loads until `attach`; `loader` is load_detail or a stand-in."""
         super().__init__(parent)
         self._loader = loader
+        #: Side of the square in m and the step its centre snaps to (None: half the
+        #: side); set them before `attach`.
+        self.side, self.snap = DETAIL_SIDE_M, None
         self._pool = ThreadPoolExecutor(1)
         self._timer = QTimer(self)
         self._timer.setInterval(POLL_MS)
@@ -42,7 +45,7 @@ class TerrainDetail(QObject):
         if scene.terrain is None or scene.terrain_folder is None:
             return
         west, south, east, north = scene.bounds
-        if max(east - west, north - south) < WIDER * DETAIL_SIDE_M:
+        if max(east - west, north - south) < WIDER * self.side:
             return
         self._scene, self._view, self._surface = scene, view, surface
         self._timer.start()
@@ -68,12 +71,15 @@ class TerrainDetail(QObject):
                 self._draw(patch)
         if (
             self._future is not None
-            or self._view.opts["distance"] > NEAR * DETAIL_SIDE_M
+            or self._view.opts["distance"] > NEAR * self.side
         ):
             return
         centre, origin = self._view.opts["center"], self._scene.origin
         window = detail_window(
-            self._scene.terrain, (centre.x() + origin[0], centre.y() + origin[1])
+            self._scene.terrain,
+            (centre.x() + origin[0], centre.y() + origin[1]),
+            self.side,
+            self.snap,
         )
         current = None if self.patch is None else self.patch.window
         if window is None or window == current or window in self._failed:

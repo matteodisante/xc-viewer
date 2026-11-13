@@ -416,6 +416,56 @@ def test_clicking_a_pilot_follows_its_group(qapp, tmp_path, monkeypatch):
         view.close()
 
 
+def test_save_image_grabs_the_view_at_a_larger_size_and_restores_it(
+    qapp, tmp_path, monkeypatch
+):
+    from PyQt6.QtGui import QImage
+
+    from xc_viewer.widgets.group_scene import IMAGE_SCALE, EpisodeScene
+
+    scene, ep = replay(tmp_path)
+    view = EpisodeScene()
+    try:
+        view.save_image(tmp_path / "none.png")  # no scene yet: nothing to save
+        assert not (tmp_path / "none.png").exists()
+        view.set_episode(scene, ep)
+        size = view._view.size()
+        sizes = []
+
+        def grab():  # the view's size while the framebuffer is read
+            sizes.append(view._view.size())
+            return QImage(view._view.size(), QImage.Format.Format_RGB32)
+
+        monkeypatch.setattr(view._view, "grabFramebuffer", grab)
+        view.save_image(tmp_path / "a.png")
+        assert sizes[-1].width() == IMAGE_SCALE * size.width()
+        view.save_image(tmp_path / "b.png", (500, 300))
+        assert (sizes[-1].width(), sizes[-1].height()) == (500, 300)
+        assert view._view.size() == size  # as before
+        assert (tmp_path / "a.png").is_file() and (tmp_path / "b.png").is_file()
+        assert view._save.isEnabled()
+    finally:
+        view.shutdown()
+        view.close()
+
+
+def test_arrows_follow_the_course_of_a_member(qapp, tmp_path):
+    from xc_viewer.widgets.group_scene import EpisodeScene
+
+    scene, ep = replay(tmp_path)
+    view = EpisodeScene()
+    try:
+        view.set_episode(scene, ep)
+        view.show_arrows(0, 8000, size=20)  # the track runs 32 km east
+        arrows = view._arrows
+        assert len(arrows.points) == 4 and arrows.size == 20
+        course = arrows.ahead - arrows.points
+        assert (course[:, 0] > 0).all() and np.allclose(course[:, 1:], 0)
+    finally:
+        view.shutdown()
+        view.close()
+
+
 def test_the_replay_holds_while_a_mouse_button_is_down(qapp, monkeypatch):
     from PyQt6.QtCore import Qt
     from PyQt6.QtGui import QGuiApplication

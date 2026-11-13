@@ -427,9 +427,12 @@ def read_timed_tracks(index, members, *, progress=lambda _: None, cancel=None):
 
 
 def load_episode_scene(
-    index, tables, episode_id, *, progress=lambda _: None, cancel=None
+    index, tables, episode_id, *, progress=lambda _: None, cancel=None, aerial_side=None
 ):
-    """The episode and its members' tracks in its window, on their terrain."""
+    """The episode and its members' tracks in its window, on their terrain.
+
+    ``aerial_side`` is the pixels per side of the orthophoto of the whole scene.
+    """
     ep = episode(tables, episode_id)
     progress("Reading the catalog for the members…")
     ep.members = identify(ep.members, index.disciplines)
@@ -458,4 +461,9 @@ def load_episode_scene(
         )
         ep.inside[f] = [flag for _, flags in parts for flag in flags]
     scene = RouteScene(ep.members, len(ep.members), (), lines, bounds, origin)
-    return load_background(scene, index, progress=progress, cancel=cancel), ep
+    return (
+        load_background(
+            scene, index, progress=progress, cancel=cancel, aerial_side=aerial_side
+        ),
+        ep,
+    )

@@ -394,7 +394,9 @@ def read_tracks(index, selected, *, progress=lambda _: None, cancel=None):
     return tracks, pd.DataFrame(metrics, index=selected.index)
 
 
-def load_background(scene, index, *, progress=lambda _: None, cancel=None):
+def load_background(
+    scene, index, *, progress=lambda _: None, cancel=None, aerial_side=None
+):
     """Attach the same all-flight heat texture and bounded IGN layers to any cohort."""
     _check_cancel(cancel)
     progress("Reading thermal hours from all archived flights crossing the area…")
@@ -415,7 +417,10 @@ def load_background(scene, index, *, progress=lambda _: None, cancel=None):
         progress("Reading IGN aerial imagery for the same terrain extent…")
         try:
             scene.aerial, scene.aerial_reference = load_aerial(
-                scene.bounds, index.path.parent / "route-terrain", cancel=cancel
+                scene.bounds,
+                index.path.parent / "route-terrain",
+                cancel=cancel,
+                max_side=aerial_side,
             )
         except (OSError, ValueError) as exc:
             scene.aerial_error = str(exc)
@@ -469,18 +474,19 @@ def terrain_colours(z, grid_m):
     return colours, gray
 
 
-def detail_window(terrain, centre, side=DETAIL_SIDE_M):
+def detail_window(terrain, centre, side=DETAIL_SIDE_M, snap=None):
     """The square of about ``side`` m around ``centre`` (Lambert-93 east, north).
 
-    Its centre snaps to multiples of side / 2, so small moves keep the same square,
+    Its centre snaps to multiples of ``snap`` (side / 2 by default), so small moves
+    keep the same square,
     and its edges to the vertex lines of the overview DEM. Returns the vertex columns
     i0 < i1 and rows j0 < j1, or None when less than two cells remain inside it.
     """
     x, y = terrain[:2]
-    half = side / 2
+    half, step = side / 2, snap or side / 2
     out = []
     for grid, c in ((x, centre[0]), (y, centre[1])):
-        snapped = round(c / half) * half
+        snapped = round(c / step) * step
         low = int(np.abs(grid - (snapped - half)).argmin())
         high = int(np.abs(grid - (snapped + half)).argmin())
         if high - low < 2:
@@ -506,7 +512,9 @@ def stitch(terrain, detail, window):
     return dx, dy, dz, reference
 
 
-def load_detail(terrain, window, origin, folder):
+def load_detail(
+    terrain, window, origin, folder, pixels=DETAIL_PIXELS, step=DETAIL_STEP_M
+):
     """The overview mesh with the finer DEM and photo of ``window``, as a TerrainPatch.
 
     Both responses are cached in ``folder`` like the overview's.
@@ -515,9 +523,9 @@ def load_detail(terrain, window, origin, folder):
     x, y = terrain[:2]
     bounds = (float(x[i0]), float(y[j0]), float(x[i1]), float(y[j1]))
     detail = stitch(
-        terrain, load_terrain(bounds, folder, min_step=DETAIL_STEP_M), window
+        terrain, load_terrain(bounds, folder, min_step=step), window
     )
-    photo, aerial_reference = load_aerial(bounds, folder, max_side=DETAIL_PIXELS)
+    photo, aerial_reference = load_aerial(bounds, folder, max_side=pixels)
     v0, f0 = terrain_mesh(terrain, origin, hole=window)
     v1, f1 = terrain_mesh(detail, origin)
     c0, g0 = terrain_colours(terrain[2], terrain[3]["grid_m"])

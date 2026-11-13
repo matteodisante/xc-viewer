@@ -7,13 +7,23 @@ import pyqtgraph as pg
 import pyqtgraph.opengl as gl
 from matplotlib import colormaps
 from OpenGL import GL
-from PyQt6.QtCore import QRectF, Qt, QTimer
-from PyQt6.QtGui import QColor, QFont, QGuiApplication, QPainter, QVector3D
+from PyQt6.QtCore import QPointF, QRectF, Qt, QTimer
+from PyQt6.QtGui import (
+    QColor,
+    QFont,
+    QGuiApplication,
+    QPainter,
+    QPen,
+    QPolygonF,
+    QVector3D,
+)
 from PyQt6.QtWidgets import (
     QAbstractItemView,
+    QApplication,
     QCheckBox,
     QComboBox,
     QDialog,
+    QFileDialog,
     QGraphicsRectItem,
     QHBoxLayout,
     QHeaderView,
@@ -69,6 +79,8 @@ STEP_S = 5
 TICK_MS = 50
 #: Flight seconds between two rebuilds of the flown tracks; the trail covers the rest.
 FLOWN_STEP_S = 30
+#: The saved image is this many times larger than the 3D view on screen.
+IMAGE_SCALE = 2
 #: Columns of the Who is who window: header and members column (None: the number).
 WHO = (
     ("Member", None),
@@ -200,6 +212,59 @@ class _Numbers(GLGraphicsItem):
             painter.end()
 
 
+class _Arrows(GLGraphicsItem):
+    """Arrowheads at screen size, pointing along the direction of travel."""
+
+    def __init__(self):
+        """Nothing to draw until `set_arrows`."""
+        super().__init__()
+        self.points = self.ahead = np.zeros((0, 3))
+        self.size = 14
+        self.setGLOptions("translucent")
+        self.updateGLOptions({GL.GL_DEPTH_TEST: False, "glDepthMask": (True,)})
+        self.setDepthValue(105)
+
+    def set_arrows(self, points, ahead, size):
+        """Draw an arrowhead of `size` px at each of `points`, towards `ahead`."""
+        self.points = np.asarray(points, float).reshape(-1, 3)
+        self.ahead = np.asarray(ahead, float).reshape(-1, 3)
+        self.size = size
+        self.update()
+
+    def paint(self):
+        """White heads with a dark edge."""
+        if not len(self.points):
+            return
+        self.setupGLState()
+        painter = QPainter(self.view())
+        painter.setRenderHints(QPainter.RenderHint.Antialiasing)
+        try:
+            painter.setPen(QPen(QColor(6, 11, 18), max(1.0, self.size / 12)))
+            painter.setBrush(QColor("#ffffff"))
+            a, shown = screen_points(self, self.points)
+            b, _ = screen_points(self, self.ahead)
+            for p, q, show in zip(a, b, shown, strict=True):
+                along = q - p
+                length = np.hypot(*along)
+                if not show or length < 1e-6:
+                    continue
+                u = along / length
+                n = np.array([-u[1], u[0]])
+                tip, back = p + u * self.size * 0.6, p - u * self.size * 0.4
+                painter.drawPolygon(
+                    QPolygonF(
+                        [
+                            QPointF(*tip),
+                            QPointF(*(back + n * self.size * 0.4)),
+                            QPointF(*(p - u * self.size * 0.1)),
+                            QPointF(*(back - n * self.size * 0.4)),
+                        ]
+                    )
+                )
+        finally:
+            painter.end()
+
+
 def nearest_member(points, visible, x, y, radius=PICK_PX):
     """Index of the visible pixel `points` nearest (x, y) within `radius`, or None."""
     if not len(points):
@@ -232,7 +297,7 @@ class EpisodeScene(RouteComparison):
         """Add the timeline under the scene; nothing is read until an episode loads."""
         super().__init__(parent, scene_only=True)
         self._episode = None
-        self._markers = self._numbers_item = self._flown_at = None
+        self._markers = self._numbers_item = self._arrows = self._flown_at = None
         self._edges, self._trails, self._flown = {}, [], []
         self._group_colour = {}
         self._reeb_data = None
@@ -283,6 +348,8 @@ class EpisodeScene(RouteComparison):
         self._who = QPushButton("Who is who")
         self._who.setToolTip("Which flight, pilot, club and wing each member number is")
         self._who_window = None
+        self._save = QPushButton("Save image…")
+        self._save.setToolTip("Save the 3D view as a PNG, twice as large as on screen")
         self._now_text = QLabel()
         self._now_text.setWordWrap(True)
         timeline = QHBoxLayout()
@@ -309,6 +376,7 @@ class EpisodeScene(RouteComparison):
         self._slider.valueChanged.connect(self._slid)
         self._trail.valueChanged.connect(lambda _: self._redraw())
         self._who.clicked.connect(self._show_who)
+        self._save.clicked.connect(self._save_image)
         self._set_timeline_enabled(False)
 
     def _build_timeline(self):
@@ -355,7 +423,7 @@ class EpisodeScene(RouteComparison):
             self._focus_only,
         )
         options = FlowLayout()
-        for widget in (*controls, self._focus_clear, self._focus_text):
+        for widget in (*controls, self._focus_clear, self._save, self._focus_text):
             options.addWidget(widget)
         self._focus_clear.clicked.connect(lambda: self.focus_group(None))
         self._reset_focus()
@@ -486,6 +554,7 @@ class EpisodeScene(RouteComparison):
         self._trails = [self._line(20, width=3.0) for _ in range(n)]
         self._flown = [self._line(10) for _ in range(n)]
         self._numbers_item = _Numbers()
+        self._arrows = _Arrows()
         self._flown_at = None
         for item in (
             self._markers,
@@ -493,6 +562,7 @@ class EpisodeScene(RouteComparison):
             *self._trails,
             *self._flown,
             self._numbers_item,
+            self._arrows,
         ):
             self._view.addItem(item)
             self._scene_items.append(item)
@@ -630,7 +700,7 @@ class EpisodeScene(RouteComparison):
             self._lower.hide()
             if self._who_window is not None:
                 self._who_window.table.setRowCount(0)
-        self._markers = self._numbers_item = self._reeb_data = None
+        self._markers = self._numbers_item = self._arrows = self._reeb_data = None
         self._edges, self._trails, self._flown = {}, [], []
         super()._clear_scene()
         self._summary.setText("")
@@ -642,10 +712,81 @@ class EpisodeScene(RouteComparison):
             self._speed,
             self._trail,
             self._who,
+            self._save,
             self._strip,
             self._reeb,
         ):
             widget.setEnabled(enabled)
+
+    def save_image(self, path, size=None):
+        """Write the 3D view to the PNG `path`.
+
+        `size` is the (width, height) of the view while it is drawn, in points; by
+        default it is IMAGE_SCALE times the size on screen. The file has as many
+        pixels as the screen gives to that size.
+        """
+        view = self._view
+        if view is None:
+            return
+        old, low, high = view.size(), view.minimumSize(), view.maximumSize()
+        if size is None:
+            size = (IMAGE_SCALE * old.width(), IMAGE_SCALE * old.height())
+        view.setFixedSize(*size)
+        try:
+            QApplication.processEvents()
+            ok = view.grabFramebuffer().save(str(path), "PNG")
+        finally:
+            view.setMinimumSize(low)
+            view.setMaximumSize(high)
+            view.resize(old)
+        if not ok:
+            raise OSError(f"Cannot write {path}")
+
+    def hide_panels(self):
+        """Leave the 3D view alone: no controls, legend, lists or locator."""
+
+        def hide(layout):
+            for k in range(layout.count()):
+                item = layout.itemAt(k)
+                if item.layout() is not None:
+                    hide(item.layout())
+                elif item.widget() is not self._flight_splitter:
+                    item.widget().hide()
+
+        hide(self._layout)
+        self._lower.hide()
+        self._locator.hide()
+
+    def show_arrows(self, flight, every_m, size=14, reach_m=800):
+        """Arrowheads along the track of `flight`, one per `every_m` of path.
+
+        Each points along the horizontal course over `reach_m` before and after it.
+        """
+        points, ahead = [], []
+        for piece in self._episode.tracks[flight].pieces:
+            xyz = piece[:, 1:4]
+            path = np.r_[0, np.cumsum(np.hypot(*np.diff(xyz[:, :2], axis=0).T))]
+            for m in np.arange(every_m / 2, path[-1], every_m):
+                here, back, front = (
+                    [np.interp(s, path, xyz[:, k]) for k in range(3)]
+                    for s in (m, max(m - reach_m, 0), min(m + reach_m, path[-1]))
+                )
+                course = np.array(front) - np.array(back)
+                course[2] = 0
+                points.append(here)
+                ahead.append(np.array(here) + course)
+        self._arrows.set_arrows(points, ahead, size)
+
+    def _save_image(self):
+        """Ask where to write the PNG of the view."""
+        path, _ = QFileDialog.getSaveFileName(
+            self, "Save image", "episode.png", "PNG image (*.png)"
+        )
+        if path:
+            try:
+                self.save_image(path)
+            except OSError as exc:
+                self._status.setText(str(exc))
 
     def _show_who(self):
         """Open the Who is who window on the members of the episode."""
