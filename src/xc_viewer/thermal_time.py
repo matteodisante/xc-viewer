@@ -210,17 +210,27 @@ class TimeGrid:
         return values, xe, ye, f"{step:g} m"
 
 
-def cache_path():
+def cache_name(key=None):
+    """File name of the density product of one segmentation (the one in use if None).
+
+    Vilpellet keeps the name every data folder already holds.
+    """
+    from . import segmentation
+
+    return segmentation.product_name(FILE_NAME, key)
+
+
+def cache_path(key=None):
     """Locate the small density product beside the standalone plane snapshot."""
-    from .thermal_store import find_store_path
+    from .thermal_store import find_store_folder
 
     override = os.environ.get("XC_VIEWER_CACHE_DIR")
     if override:
-        return Path(override).expanduser() / FILE_NAME
-    store = find_store_path()
-    if store is None:
+        return Path(override).expanduser() / cache_name(key)
+    folder = find_store_folder()
+    if folder is None:
         raise FileNotFoundError("Choose a data folder with thermal-planes.sqlite3")
-    return store.with_name(FILE_NAME)
+    return folder / cache_name(key)
 
 
 def save_grids(grids, path, metadata):
@@ -252,8 +262,12 @@ def load_grids(path=None, *, allow_incomplete=False):
     """Read a duration product, rejecting incompatible count-based versions."""
     path = cache_path() if path is None else Path(path)
     if not path.is_file():
+        from . import segmentation
+
+        seg = segmentation.current()
         raise FileNotFoundError(
-            "Prepare thermal-duration.npz with prepare_thermal_density.py"
+            f"Prepare {path.name} for the {seg.label} segmentation with "
+            f"scripts/prepare_thermal_density.py --segmentation {seg.key}"
         )
     with np.load(path, allow_pickle=False) as saved:
         if int(saved["version"]) != VERSION:

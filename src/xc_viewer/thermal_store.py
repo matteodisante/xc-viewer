@@ -13,14 +13,15 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+from . import segmentation
 from .core.disciplines import DISCIPLINES
 from .sqlite import connect
 from .thermal_geometry import ThermalCell
 from .thermal_ground import (
-    CLIMB_RANKING,
     GROUND_REFERENCE,
     TERRAIN_RANKING,
     cell_band,
+    is_climb_ranking,
     order_terrain_cells,
     terrain_cell,
     terrain_reference,
@@ -73,6 +74,19 @@ def _connect(path):
         db.close()
 
 
+def _sources(metadata):
+    """The segmentations named by a snapshot's signatures; Vilpellet if none are."""
+    try:
+        keys = json.loads(metadata.get("segmentation_signatures") or "{}")
+    except ValueError:
+        keys = {}
+    return (
+        tuple(keys)
+        if isinstance(keys, dict) and keys
+        else (segmentation.VILPELLET.key,)
+    )
+
+
 class ThermalStore:
     """Only a filename crosses threads; each read owns its SQLite connection."""
 
@@ -98,12 +112,14 @@ class ThermalStore:
 
             self.has_points = metadata.get("point_lattice") == POINT_LATTICE_VERSION
             self.disciplines = tuple(json.loads(metadata["disciplines"]))
+            # The segmentations whose climbs the snapshot holds.
+            self.sources = _sources(metadata)
             self.quality_summary = json.loads(metadata.get("launch_quality", "null"))
-            self.has_terrain_ranking = metadata.get("ranking_reference") in (
-                TERRAIN_RANKING,
-                CLIMB_RANKING,
+            ranking = metadata.get("ranking_reference")
+            self.has_climb_ranking = is_climb_ranking(ranking)
+            self.has_terrain_ranking = ranking == TERRAIN_RANKING or (
+                self.has_climb_ranking
             )
-            self.has_climb_ranking = metadata.get("ranking_reference") == CLIMB_RANKING
             self.activity_counts = (
                 {
                     (ix, iy): {"climb_runs": runs, "climb_flights": flights}
@@ -280,8 +296,13 @@ class ThermalStore:
         use_edges=False,
     ):
         """Read saved products only: no raw files, parquet, models or write handles."""
-        if source != "vilpellet":
-            raise ValueError(f"Unknown segmentation: {source}")
+        label = segmentation.get(source).label
+        if source not in self.sources:
+            prepared = ", ".join(segmentation.get(s).label for s in self.sources)
+            raise ValueError(
+                f"These Thermal planes were prepared for {prepared} only: the "
+                f"{label} segmentation needs a snapshot that holds its climbs."
+            )
         if end < start:
             raise ValueError("The end time precedes the start time")
         edges = []
@@ -366,26 +387,41 @@ class ThermalStore:
         )
 
 
-def find_store_path():
-    """Locate a snapshot, including legacy files awaiting an offline upgrade."""
-    override = os.environ.get("XC_VIEWER_CACHE_DIR")
-    paths = (
-        [Path(override).expanduser() / STORE_NAME]
-        if override
-        else [
-            d.config().derived_dir / "viewer/thermal-planes" / STORE_NAME
-            for d in DISCIPLINES.values()
-        ]
-    )
-    for path in paths:
-        if path.is_file():
-            return path
+def find_store_path(key=None):
+    """Locate the snapshot of a segmentation, including legacy files awaiting upgrade.
+
+    Args:
+        key: The segmentation; the one in use when omitted.
+    """
+    name = segmentation.product_name(STORE_NAME, key)
+    for folder in _store_folders():
+        if (folder / name).is_file():
+            return folder / name
     return None
 
 
-def load_store():
-    """Find the ready file, without checking or opening its original archives."""
-    path = find_store_path()
+def find_store_folder():
+    """The folder holding the snapshots, found through any segmentation's file."""
+    for key in segmentation.SEGMENTATIONS:
+        path = find_store_path(key)
+        if path is not None:
+            return path.parent
+    return None
+
+
+def _store_folders():
+    """Where a snapshot may sit: the cache override, else each viewer folder."""
+    override = os.environ.get("XC_VIEWER_CACHE_DIR")
+    if override:
+        return [Path(override).expanduser()]
+    return [
+        d.config().derived_dir / "viewer/thermal-planes" for d in DISCIPLINES.values()
+    ]
+
+
+def load_store(key=None):
+    """Find the ready file of a segmentation, without opening its original archives."""
+    path = find_store_path(key)
     if path is None:
         return None
     store = ThermalStore(path)
@@ -397,9 +433,13 @@ def load_store():
     return store
 
 
-def export_store(index, *, relief=None, destination=None):
-    """Export checked edges, optionally staging before imagery/point enrichment."""
-    from .thermal_cache import segmentation_signature
+def export_store(index, *, relief=None, destination=None, source="vilpellet"):
+    """Export checked edges, optionally staging before imagery/point enrichment.
+
+    The snapshot holds the climbs of one segmentation, ``source``, and is named after
+    it (:func:`~xc_viewer.segmentation.product_name`).
+    """
+    from .thermal_cache import climbs_path, segmentation_signature
 
     references = getattr(index, "terrain_references", None)
     if references is None:
@@ -411,13 +451,15 @@ def export_store(index, *, relief=None, destination=None):
 
         relief = prepare_relief(index)
     target = (
-        index.path.with_name(STORE_NAME) if destination is None else Path(destination)
+        index.path.with_name(segmentation.product_name(STORE_NAME, source))
+        if destination is None
+        else Path(destination)
     )
     temporary = target.with_suffix(".building.sqlite3")
     temporary.unlink(missing_ok=True)
     with (
         connect(temporary) as out,
-        _connect(index.path.with_name("thermal-climbs.sqlite3")) as products,
+        _connect(climbs_path(index.path, source)) as products,
     ):
         out.executescript("""
             CREATE TABLE metadata(key TEXT PRIMARY KEY,value TEXT);
@@ -436,7 +478,7 @@ def export_store(index, *, relief=None, destination=None):
                 status TEXT,edges BLOB,
                 PRIMARY KEY(source,ix,iy,discipline,flight_id));
         """)
-        keys = {"vilpellet": segmentation_signature(index, "vilpellet")}
+        keys = {source: segmentation_signature(index, source)}
         out.executemany(
             "INSERT INTO metadata VALUES (?,?)",
             [
@@ -454,10 +496,8 @@ def export_store(index, *, relief=None, destination=None):
                 "INSERT INTO metadata VALUES (?,?)",
                 ("launch_quality", json.dumps(index.quality_summary)),
             )
-            if index.quality_summary.get("ranking_reference") in (
-                TERRAIN_RANKING,
-                CLIMB_RANKING,
-            ):
+            ranking = index.quality_summary.get("ranking_reference")
+            if ranking == TERRAIN_RANKING or is_climb_ranking(ranking):
                 out.execute(
                     "INSERT INTO metadata VALUES ('ranking_reference',?)",
                     (index.quality_summary["ranking_reference"],),
@@ -504,37 +544,34 @@ def export_store(index, *, relief=None, destination=None):
                 )
             )
             days = {}
-            for source, key in keys.items():
-                found = set()
-                for discipline, fid, status, blob in products.execute(
-                    "SELECT discipline,flight_id,status,edges FROM climbs "
-                    "WHERE cache_key=? AND ix=? AND iy=?",
-                    (key, cell.ix, cell.iy),
-                ):
-                    if (discipline, fid) not in expected:
-                        continue
-                    found.add((discipline, fid))
-                    out.execute(
-                        "INSERT INTO climbs VALUES (?,?,?,?,?,?,?)",
-                        (source, discipline, fid, cell.ix, cell.iy, status, blob),
-                    )
-                    if source == "vilpellet":
-                        with np.load(io.BytesIO(blob), allow_pickle=False) as saved:
-                            a = saved["edges"]
-                        if len(a):
-                            for day in np.unique(np.floor(a[:, 3] / 86400) * 86400):
-                                subset = a[np.floor(a[:, 3] / 86400) * 86400 == day]
-                                n, z = days.get(float(day), (0, 0.0))
-                                days[float(day)] = (
-                                    n + len(subset),
-                                    z
-                                    + float(((subset[:, 2] + subset[:, 6]) / 2).sum()),
-                                )
-                if found != expected:
-                    raise RuntimeError(
-                        f"{cell.terrain}/{source}: {len(expected - found)} "
-                        "flights still need preparation"
-                    )
+            found = set()
+            for discipline, fid, status, blob in products.execute(
+                "SELECT discipline,flight_id,status,edges FROM climbs "
+                "WHERE cache_key=? AND ix=? AND iy=?",
+                (keys[source], cell.ix, cell.iy),
+            ):
+                if (discipline, fid) not in expected:
+                    continue
+                found.add((discipline, fid))
+                out.execute(
+                    "INSERT INTO climbs VALUES (?,?,?,?,?,?,?)",
+                    (source, discipline, fid, cell.ix, cell.iy, status, blob),
+                )
+                with np.load(io.BytesIO(blob), allow_pickle=False) as saved:
+                    a = saved["edges"]
+                if len(a):
+                    for day in np.unique(np.floor(a[:, 3] / 86400) * 86400):
+                        subset = a[np.floor(a[:, 3] / 86400) * 86400 == day]
+                        n, z = days.get(float(day), (0, 0.0))
+                        days[float(day)] = (
+                            n + len(subset),
+                            z + float(((subset[:, 2] + subset[:, 6]) / 2).sum()),
+                        )
+            if found != expected:
+                raise RuntimeError(
+                    f"{cell.terrain}/{source}: {len(expected - found)} "
+                    "flights still need preparation"
+                )
             if days:
                 day, (n, z) = max(days.items(), key=lambda item: item[1][0])
                 height = float(np.clip(z / n - cell.ground_m, 0, cell.max_agl_m))

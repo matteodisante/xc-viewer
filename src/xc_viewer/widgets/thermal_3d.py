@@ -21,6 +21,7 @@ from PyQt6.QtWidgets import (
     QVBoxLayout,
 )
 
+from .. import segmentation
 from ..thermal_3d import cell_label, load_scene
 from ..thermal_daily import PARIS
 from .flow_layout import FlowLayout
@@ -221,14 +222,14 @@ class Thermal3D(QDialog):
     def __init__(self, parent=None):
         """Create controls and defer all saved-data reads to an explicit request."""
         super().__init__(parent)
-        self.setWindowTitle("3D terrain · Vilpellet")
+        self.setWindowTitle(f"3D terrain · {segmentation.current().label}")
         self.resize(1200, 850)
         self._worker = None
         self._scene = None
         self._cloud = self._surface = None
         self._request = None
         self._map_focus = None
-        self._heading = QLabel("Vilpellet · planes every 20 m")
+        self._heading = QLabel(f"{segmentation.current().label} · planes every 20 m")
         self._heading.setWordWrap(True)
         self._summary = QLabel()
         self._summary.setWordWrap(True)
@@ -296,7 +297,8 @@ class Thermal3D(QDialog):
             "Shift + drag: move · Drag: orbit · Alt + drag: look around\n"
             "Click scene for keyboard: W/S forward/back · A/D left/right · "
             "Q/E down/up · Mouse wheel: zoom · "
-            "Blue: Vilpellet intersections · Scale 1:1 (metres on all axes)"
+            f"Blue: {segmentation.current().label} intersections · "
+            "Scale 1:1 (metres on all axes)"
         )
         navigation.setWordWrap(True)
         self._source = QLabel()
@@ -323,7 +325,8 @@ class Thermal3D(QDialog):
 
     def _set_heading(self, label, start, end, selection=None):
         """Identify the displayed cell and dates in the window and scene titles."""
-        self.setWindowTitle(f"3D terrain · {label} · Vilpellet")
+        seg = segmentation.current().label
+        self.setWindowTitle(f"3D terrain · {label} · {seg}")
         if selection is None:
             dates = [
                 datetime.fromtimestamp(t, PARIS).strftime("%Y-%m-%d %H:%M:%S")
@@ -331,7 +334,7 @@ class Thermal3D(QDialog):
             ]
             selection = f"{dates[0]} → {dates[1]} · Europe/Paris"
         self._heading.setText(
-            f"{label} · {self._area.currentText()} · Vilpellet · planes every 20 m\n"
+            f"{label} · {self._area.currentText()} · {seg} · planes every 20 m\n"
             f"{selection}"
         )
 
@@ -450,7 +453,8 @@ class Thermal3D(QDialog):
         self._summary.setText(
             f"Area {scene.area_km} x {scene.area_km} km · "
             f"Central cell {scene.cell.ix}/{scene.cell.iy}: "
-            f"{scene.climb_runs:,} Vilpellet climbs in the all-date ranking\n"
+            f"{scene.climb_runs:,} {segmentation.current().label} climbs in the "
+            "all-date ranking\n"
             f"{len(scene.points):,} intersections · "
             f"{scene.contributing_flights:,} contributing flights · "
             f"H = {scene.cell.ground_m:.2f} m + 0, 20, 40, … m"

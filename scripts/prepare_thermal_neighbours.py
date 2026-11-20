@@ -3,8 +3,8 @@
 
 Zoom - in the thermal-plane viewer reads only these products. The first run
 labels every flight crossing the neighbouring squares from the processed
-archives (Vilpellet segmentation) and downloads their IGN backgrounds; later runs
-resume where the previous one stopped.
+archives (the segmentation of the snapshot) and downloads their IGN backgrounds;
+later runs resume where the previous one stopped.
 """
 
 import argparse
@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
+from xc_viewer import segmentation  # noqa: E402
 from xc_viewer.locking import BusyError, exclusive  # noqa: E402
 from xc_viewer.thermal_neighbours import (  # noqa: E402
     prepare_neighbour_imagery,
@@ -31,6 +32,12 @@ def main() -> int:
     """Prepare the neighbourhoods under the shared offline-writer lock."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--store", type=Path)
+    parser.add_argument(
+        "--segmentation",
+        choices=list(segmentation.SEGMENTATIONS),
+        default=segmentation.DEFAULT,
+        help="snapshot to enrich when --store is not given (default: %(default)s)",
+    )
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument(
         "--image-px",
@@ -45,7 +52,7 @@ def main() -> int:
         help="Only complete the IGN elevation cache for the 10 km 3D view",
     )
     args = parser.parse_args()
-    store = args.store or load_store().path
+    store = args.store or load_store(args.segmentation).path
     last = 0.0
 
     def progress(message: str) -> None:

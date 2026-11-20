@@ -22,7 +22,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from . import data
+from . import data, segmentation
 from .catalog_index import resolve_igc_path
 from .core.config import load_preproc_config
 from .core.disciplines import DISCIPLINES, Discipline
@@ -490,8 +490,7 @@ def load_plane_data(
     """Read saved climbs; decode and persist only previously unprepared flights."""
     from .thermal_cache import ClimbCache
 
-    if source != "vilpellet":
-        raise ValueError(f"Unknown segmentation: {source}")
+    segmentation.get(source)
     if (
         index.signature is not None
         and archive_signature([DISCIPLINES[name] for name in index.disciplines])
@@ -517,7 +516,12 @@ def load_plane_data(
             )
         return archives[discipline].read_row_group(group).to_pandas()
 
-    loader = data.load_vilpellet_phases
+    def loader(fixes, discipline, flight_id):
+        """Vilpellet decodes the fixes; the others read their saved runs."""
+        if source == segmentation.VILPELLET.key:
+            return data.load_vilpellet_phases(fixes, discipline)
+        return data.load_saved_phases(fixes, discipline, flight_id, source)
+
     with connect(index.path) as db, ClimbCache(index, source) as cache:
         for i, row in enumerate(selected.itertuples(index=False)):
             _check_cancel(cancel)
@@ -558,7 +562,7 @@ def load_plane_data(
             fixes = pd.concat(pieces, ignore_index=True).sort_values(
                 ["segment_id", "t"], kind="stable"
             )
-            phase = loader(fixes, DISCIPLINES[row.discipline])
+            phase = loader(fixes, DISCIPLINES[row.discipline], row.flight_id)
             if phase is None:
                 unavailable += 1
                 cache.put(

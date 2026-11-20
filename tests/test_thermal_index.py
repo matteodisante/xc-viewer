@@ -124,6 +124,51 @@ def test_decode_whole_flight_and_restore_trim_offset_before_utc_filter(
     )
 
 
+def test_refit_climbs_come_from_the_saved_runs_and_are_cached_apart(index, monkeypatch):
+    fixes = pd.DataFrame(
+        {
+            "flight_id": [fid for fid in ("a", "b", "c") for _ in range(3)],
+            "segment_id": [0] * 9,
+            "t": [0.0, 50.0, 100.0] * 3,
+            "E": [1000.0, 2000.0, 3000.0] * 3,
+            "N": [1000.0] * 9,
+            "z": [300.0, 500.0, 700.0] * 3,
+        }
+    )
+    fake = SimpleNamespace(
+        read_row_group=lambda _: SimpleNamespace(to_pandas=lambda: fixes)
+    )
+    monkeypatch.setattr(thermal_index.pq, "ParquetFile", lambda _: fake)
+    monkeypatch.setattr(
+        type(PARAGLIDERS), "config", lambda self: SimpleNamespace(derived_dir=Path())
+    )
+    monkeypatch.setattr(thermal_index, "enu_to_geodetic", lambda e, n, z, frame: (n, e))
+    monkeypatch.setattr(thermal_index, "project", lambda lon, lat: (lon, lat))
+    calls = []
+
+    def saved(frame, discipline, flight_id, source):
+        calls.append((flight_id, source))
+        return SimpleNamespace(fixes=frame.assign(phase="climb"))
+
+    monkeypatch.setattr(thermal_index.data, "load_saved_phases", saved)
+    monkeypatch.setattr(
+        thermal_index.data,
+        "load_vilpellet_phases",
+        lambda *_: pytest.fail("Vilpellet decoded for the refit"),
+    )
+    result = load_plane_data(index, index.cells()[0], 1080, 1090, "refit")
+    assert result.selected == result.decoded == 3
+    assert calls == [("a", "refit"), ("b", "refit"), ("c", "refit")]
+    # The Vilpellet products of the same flights are a different cache key.
+    from xc_viewer.thermal_cache import segmentation_signature
+
+    assert segmentation_signature(index, "refit") != segmentation_signature(
+        index, "vilpellet"
+    )
+    with pytest.raises(ValueError, match="Unknown segmentation"):
+        load_plane_data(index, index.cells()[0], 1080, 1090, "nope")
+
+
 def test_missing_segmentation_is_explicit_not_substituted(index, monkeypatch):
     fake = SimpleNamespace(
         read_row_group=lambda _: SimpleNamespace(

@@ -30,7 +30,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .. import geography
+from .. import geography, segmentation
 from ..thermal_daily import (
     PARIS,
     height_levels,
@@ -56,8 +56,16 @@ NEIGHBOURS_MISSING = (
     "This data folder has no prepared neighbouring cells, so zooming out shows "
     "only the selected cell."
 )
-# The only climb labels shown: the Vilpellet segmentation.
-SOURCE = "vilpellet"
+
+
+def _source():
+    """The segmentation whose climbs the planes show: the one in use."""
+    return segmentation.current().key
+
+
+def _label():
+    """The name of the segmentation in use, for the texts that say whose climbs."""
+    return segmentation.current().label
 
 
 def _day_month_calendar() -> QCalendarWidget:
@@ -219,7 +227,7 @@ class ThermalPlane(QWidget):
         )
         self._cells.setToolTip(
             "The twelve prepared cells: in each terrain category, the three with "
-            "the most Vilpellet climb runs over all dates."
+            "the most climb runs of the segmentation in use over all dates."
         )
         self._start, self._end = QDateTimeEdit(), QDateTimeEdit()
         for edit in (self._start, self._end):
@@ -350,12 +358,12 @@ class ThermalPlane(QWidget):
         self._summary = QLabel(
             "Metropolitan France · both available disciplines · "
             "5 x 5 km Lambert-93 cells.\n"
-            "Ranked by all-time Vilpellet climb runs. Plane reference: "
-            "lowest IGN terrain elevation inside the cell."
+            "Ranked by all-time climb runs of the segmentation in use. "
+            "Plane reference: lowest IGN terrain elevation inside the cell."
         )
         self._summary.setWordWrap(True)
         self._status = QLabel(
-            "Choose a data folder to read the prepared cells and Vilpellet climbs."
+            "Choose a data folder to read the prepared cells and climbs."
         )
         self._status.setWordWrap(True)
         self._view = QComboBox()
@@ -547,7 +555,8 @@ class ThermalPlane(QWidget):
         """Read saved data only; opening a tab never starts expensive preparation."""
         if not self._tried_cache and self._worker is None:
             self._tried_cache = True
-            self._run(lambda **_: load_store(), self._saved_index_ready)
+            key = _source()
+            self._run(lambda **_: load_store(key), self._saved_index_ready)
 
     def _saved_index_ready(self, index):
         """Offer explicit preparation when there is no current saved census."""
@@ -556,9 +565,10 @@ class ThermalPlane(QWidget):
             self._cells.clear()
             self._draw_map()
             self._draw_plane()
+            name = segmentation.product_name("thermal-planes.sqlite3")
             self._status.setText(
-                "This data folder has no prepared Thermal planes data "
-                "(thermal-planes.sqlite3). Choose a complete data folder."
+                f"This data folder has no prepared Thermal planes data for the "
+                f"{_label()} segmentation ({name}). Choose a complete data folder."
             )
         else:
             self._index_ready(index)
@@ -683,7 +693,8 @@ class ThermalPlane(QWidget):
         """Reload only the standalone prepared file; never prepare inside the GUI."""
         self._plane = None
         self._draw_plane()
-        self._run(lambda **_: load_store(), self._saved_index_ready)
+        key = _source()
+        self._run(lambda **_: load_store(key), self._saved_index_ready)
 
     def _index_ready(self, index):
         """Expose saved cells with their DEM categories and crossing counts."""
@@ -697,7 +708,7 @@ class ThermalPlane(QWidget):
             ranks[cell.terrain] = ranks.get(cell.terrain, 0) + 1
             activity = getattr(index, "activity_counts", {}).get((cell.ix, cell.iy))
             population = (
-                f"{activity['climb_runs']:,} Vilpellet climbs"
+                f"{activity['climb_runs']:,} {_label()} climbs"
                 if activity
                 else f"{cell.flights:,} cell visitors"
             )
@@ -708,7 +719,7 @@ class ThermalPlane(QWidget):
             )
         if getattr(index, "has_climb_ranking", False):
             self._cells.setToolTip(
-                "Ranked by continuous Vilpellet climb runs inside each cell, "
+                f"Ranked by continuous {_label()} climb runs inside each cell, "
                 "using all dates and both disciplines. Each run counts once per "
                 "cell, regardless of duration, repeated entries or sample count. "
                 "Changing the display method does not change this ranking."
@@ -810,7 +821,7 @@ class ThermalPlane(QWidget):
             self._summary.setText(
                 f"{cell.terrain} #{self._rank(cell)} · 5 x 5 km (Lambert-93) · "
                 + (
-                    f"{activity['climb_runs']:,} Vilpellet climb runs from "
+                    f"{activity['climb_runs']:,} {_label()} climb runs from "
                     f"{activity['climb_flights']:,} flights (ranking, all dates). "
                     if activity
                     else ""
@@ -879,7 +890,7 @@ class ThermalPlane(QWidget):
             'Terrain: <a href="https://www.data.gouv.fr/datasets/rge-alti-r">'
             "IGN RGE ALTI</a> · Licence Ouverte 2.0"
             f"{detail}{api}. Flights: FFVL CFD IGC · GNSS altitude · "
-            "climb labels: Vilpellet et al. (2026)."
+            f"climb labels: {segmentation.current().credit}"
         )
 
     def _invalidate_plane(self, *_):
@@ -925,7 +936,7 @@ class ThermalPlane(QWidget):
         self._plane = None
         self._draw_plane()
         self._run(
-            lambda **kwargs: index.read_plane(cell, start, end, SOURCE, **kwargs),
+            lambda **kwargs: index.read_plane(cell, start, end, _source(), **kwargs),
             self._plane_ready,
         )
 
@@ -948,12 +959,12 @@ class ThermalPlane(QWidget):
         reload = self._plane is None
 
         def load(progress, cancel):
-            flights = index.neighbour_flights(cell, SOURCE)
+            flights = index.neighbour_flights(cell, _source())
             if flights is None:
                 raise ValueError(NEIGHBOURS_MISSING)
             plane = (
                 index.read_plane(
-                    cell, *bounds, SOURCE, progress=progress, cancel=cancel
+                    cell, *bounds, _source(), progress=progress, cancel=cancel
                 )
                 if reload
                 else None
@@ -985,7 +996,7 @@ class ThermalPlane(QWidget):
         """Saved neighbour crossings on one plane, clipped to the selected interval."""
         if level not in self._neighbour_levels:
             start, end = self._read_bounds()
-            frame = self._index.neighbour_points(cell, SOURCE, level)
+            frame = self._index.neighbour_points(cell, _source(), level)
             frame = frame.loc[frame.utc.between(start, end)].reset_index(drop=True)
             disciplines, flight_ids = self._neighbours
             number = frame.pop("flight").to_numpy(dtype=np.int64)
@@ -1473,7 +1484,7 @@ class ThermalPlane(QWidget):
             0.02,
             "P: Plains   H: Hills\nL: Low mountains   M: High mountains\n"
             + (
-                "Count = Vilpellet climb runs\n"
+                f"Count = {_label()} climb runs\n"
                 if getattr(self._index, "has_climb_ranking", False)
                 else "Count = cell visitors\n"
             )
@@ -1486,7 +1497,7 @@ class ThermalPlane(QWidget):
             zorder=7,
         )
         ax.set_title(
-            "Top Vilpellet climb cells per terrain category"
+            f"Top {_label()} climb cells per terrain category"
             if getattr(self._index, "has_climb_ranking", False)
             else (
                 "Top visitor cells per highest-terrain category"

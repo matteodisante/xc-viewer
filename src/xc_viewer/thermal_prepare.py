@@ -6,12 +6,13 @@ import io
 import multiprocessing
 import os
 from concurrent.futures import FIRST_COMPLETED, ProcessPoolExecutor, wait
+from contextlib import ExitStack
 
 import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
-from . import data
+from . import data, segmentation
 from .core.disciplines import DISCIPLINES
 from .core.preproc.enu import LocalFrame
 from .geodesy import enu_to_geodetic
@@ -25,8 +26,12 @@ def _decode(task):
     row, fixes, requests = task
     fixes = fixes.sort_values(["segment_id", "t"], kind="stable")
     result = []
-    for _source, targets in requests.items():
-        phase = data.load_vilpellet_phases(fixes, DISCIPLINES[row["discipline"]])
+    for source, targets in requests.items():
+        discipline = DISCIPLINES[row["discipline"]]
+        if source == segmentation.VILPELLET.key:
+            phase = data.load_vilpellet_phases(fixes, discipline)
+        else:
+            phase = data.load_saved_phases(fixes, discipline, row["flight_id"], source)
         status = "unavailable"
         if phase is not None:
             frame = phase.fixes.copy()
@@ -67,11 +72,14 @@ def prepare_climbs(
     """Stream needed row groups once; parent alone commits complete products.
 
     ``cells`` narrows the work, e.g. to explored squares; by default every selected
-    cell is prepared.
+    cell is prepared. Each segmentation of ``sources`` commits to its own file
+    (:func:`~xc_viewer.thermal_cache.climbs_path`).
     """
     todo = {}
+    files = {}
     for source in sources:
         with ClimbCache(index, source) as cache:
+            files[cache.key] = cache.path
             existing = set(
                 cache.db.execute(
                     "SELECT discipline,flight_id,ix,iy FROM climbs WHERE cache_key=?",
@@ -109,24 +117,31 @@ def prepare_climbs(
     pending = set()
     with (
         connect(index.path) as census,
-        # A read-only audit can briefly hold a shared lock. Wait for it instead
-        # of aborting a long preparation after SQLite's default five seconds.
-        connect(index.path.with_name("thermal-climbs.sqlite3"), timeout=120) as saved,
+        ExitStack() as stack,
         ProcessPoolExecutor(
             max_workers=workers, mp_context=multiprocessing.get_context("spawn")
         ) as pool,
     ):
+        # A read-only audit can briefly hold a shared lock. Wait for it instead
+        # of aborting a long preparation after SQLite's default five seconds.
+        saved = {
+            key: stack.enter_context(connect(path, timeout=120))
+            for key, path in files.items()
+        }
 
         def collect():
             nonlocal pending, completed
             done, pending = wait(pending, return_when=FIRST_COMPLETED)
             for future in done:
-                saved.executemany(
-                    "INSERT OR REPLACE INTO climbs VALUES (?,?,?,?,?,?,?)",
-                    future.result(),
-                )
+                rows = future.result()
+                for key, db in saved.items():
+                    db.executemany(
+                        "INSERT OR REPLACE INTO climbs VALUES (?,?,?,?,?,?,?)",
+                        [row for row in rows if row[0] == key],
+                    )
                 completed += 1
-            saved.commit()
+            for db in saved.values():
+                db.commit()
             progress(f"Prepared {completed:,}/{total:,} distinct flights")
 
         for discipline in index.disciplines:

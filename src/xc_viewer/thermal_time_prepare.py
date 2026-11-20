@@ -13,6 +13,7 @@ import numpy as np
 import pandas as pd
 from pyproj import Transformer
 
+from . import segmentation
 from .core.preproc.enu import LocalFrame
 from .geodesy import enu_to_geodetic
 from .sqlite import connect
@@ -21,31 +22,29 @@ from .thermal_regions import REGIONS, extent
 from .thermal_store import load_store
 from .thermal_time import BASE_M, TimeGrid, cache_path, load_grids, save_grids
 
-# The climb labels behind every residence-time product.
-SOURCE = "vilpellet"
-
 
 def region_grids(national):
     """Crop the national grid to metric viewports enclosing the five regional boxes."""
+    source = segmentation.current().key
     transform = Transformer.from_crs(4326, 2154, always_xy=True)
     result = {}
     for name, box in REGIONS.items():
         bounds = np.asarray(transform.transform_bounds(*extent(box), densify_pts=21))
         bounds[:2] = np.floor(bounds[:2] / BASE_M) * BASE_M
         bounds[2:] = np.ceil(bounds[2:] / BASE_M) * BASE_M
-        result[f"region/{name}/{SOURCE}"] = national.crop(
+        result[f"region/{name}/{source}"] = national.crop(
             bounds,
             metadata={
                 "name": name,
-                "source": SOURCE,
+                "source": source,
                 "population": "all crossing trajectories",
             },
         )
     return result
 
 
-def climb_edges(fixes, runs, origins):
-    """Lambert-93 edges inside saved Vilpellet climb runs, and their seconds.
+def climb_edges(fixes, runs, origins, *, by_time=False):
+    """Lambert-93 edges inside saved climb runs, and their seconds.
 
     ``fixes`` holds whole flights, each contiguous and ordered by segment and time;
     ``runs`` holds their climb runs (``flight_id``, ``segment_id``, ``t_start``,
@@ -53,6 +52,10 @@ def climb_edges(fixes, runs, origins):
     step, as in :func:`~xc_viewer.thermal_geometry.continuous_edges`: positive
     and at most 1.5 times the segment's median step. Gaps, run boundaries and
     separate flights never contribute.
+
+    A fix belongs to the run of its segment holding its time. With ``by_time`` the
+    segment numbers of ``runs`` are not those of ``fixes``: a fix belongs to the run of
+    its flight holding its time, and ``n_fixes`` is not checked.
     """
     empty = np.empty((0, 2)), np.empty((0, 2)), np.empty(0)
     if len(fixes) < 2 or not len(runs):
@@ -72,24 +75,29 @@ def climb_edges(fixes, runs, origins):
     run_codes = flights.get_indexer(runs.flight_id.astype(str))
     runs = runs.loc[run_codes >= 0]
     run_codes = run_codes[run_codes >= 0].astype(np.int64)
-    run_key = run_codes * 2**32 + runs.segment_id.to_numpy(np.int64)
+    run_key = run_codes * 2**32
+    if not by_time:
+        run_key = run_key + runs.segment_id.to_numpy(np.int64)
+    label_key = codes.astype(np.int64) * 2**32 if by_time else key
     t0, t1 = runs.t_start.to_numpy(float), runs.t_end.to_numpy(float)
     order = np.lexsort((t0, run_key))
     run_key, t0, t1 = run_key[order], t0[order], t1[order]
     expected = runs.n_fixes.to_numpy(np.int64)[order]
     # Merge run starts into the fixes: each fix takes the last run starting at or
-    # before it in the same flight segment, if that run has not ended yet.
+    # before it in the same flight segment (flight, with ``by_time``), if that run has
+    # not ended yet.
     n = len(run_key)
     is_fix = np.r_[np.zeros(n, bool), np.ones(len(key), bool)]
-    merged = np.lexsort((is_fix, np.r_[t0, t], np.r_[run_key, key]))
+    merged = np.lexsort((is_fix, np.r_[t0, t], np.r_[run_key, label_key]))
     last = np.maximum.accumulate(np.where(is_fix[merged], -1, merged))
     at_fix = is_fix[merged]
     fix, run = merged[at_fix] - n, last[at_fix]
     ok = run >= 0
-    ok[ok] = (run_key[run[ok]] == key[fix[ok]]) & (t[fix[ok]] <= t1[run[ok]])
+    ok[ok] = (run_key[run[ok]] == label_key[fix[ok]]) & (t[fix[ok]] <= t1[run[ok]])
     labels = np.full(len(key), -1, dtype=np.int64)
     labels[fix[ok]] = run[ok]
-    if not np.array_equal(np.bincount(labels[labels >= 0], minlength=n), expected):
+    counts = np.bincount(labels[labels >= 0], minlength=n)
+    if not by_time and not np.array_equal(counts, expected):
         raise ValueError("Saved Vilpellet runs do not match the native archive")
 
     indices = np.flatnonzero(edge & (labels[:-1] >= 0) & (labels[:-1] == labels[1:]))
@@ -118,7 +126,9 @@ def climb_edges(fixes, runs, origins):
 def prepare(
     *, regions=True, cells=True, limit_batches=None, output=None, progress=print
 ):
-    """Crop regions from the national Vilpellet product; reuse saved cell edges.
+    """Crop regions from the national product; reuse saved cell edges.
+
+    Both come from the segmentation in use (:mod:`xc_viewer.segmentation`).
 
     No decoder runs, no new plane intersections, no changes to the source archives.
     Limited builds (cells only) require an explicit output and are marked incomplete.
@@ -128,6 +138,7 @@ def prepare(
     if limit_batches is not None and regions:
         raise ValueError("Regions crop the complete national product; limit cells only")
     start = time.perf_counter()
+    source = segmentation.current().key
     target = cache_path() if output is None else output
     grids, report = (
         {},
@@ -155,7 +166,7 @@ def prepare(
         stage_start = time.perf_counter()
         national_path = prepare_density(progress=progress)
         national, info = load_grids(national_path)
-        grids.update(region_grids(national[f"archive/{SOURCE}"]))
+        grids.update(region_grids(national[f"archive/{source}"]))
         report["inputs"].append(
             {"path": str(national_path), "signature": info.get("signature")}
         )
@@ -169,15 +180,17 @@ def prepare(
     if cells:
         store = load_store()
         if store is None:
-            raise FileNotFoundError("Prepare thermal-planes.sqlite3 first")
+            raise FileNotFoundError(
+                f"Prepare {segmentation.product_name('thermal-planes.sqlite3')} first"
+            )
         cell_grids = {}
         for cell in store.cells():
             cell_grids[cell.ix, cell.iy] = grids[
-                f"cell/{cell.ix}/{cell.iy}/{SOURCE}"
+                f"cell/{cell.ix}/{cell.iy}/{source}"
             ] = TimeGrid(
                 cell.bounds,
                 metadata={
-                    "source": SOURCE,
+                    "source": source,
                     "cell": [cell.ix, cell.iy],
                     "terrain": cell.terrain,
                     "ground_m": cell.ground_m,
@@ -187,7 +200,7 @@ def prepare(
         stage_start = time.perf_counter()
         with connect(store.path.as_uri() + "?mode=ro", uri=True) as db:
             rows = db.execute(
-                "SELECT ix,iy,edges FROM climbs WHERE source=?", (SOURCE,)
+                "SELECT ix,iy,edges FROM climbs WHERE source=?", (source,)
             )
             products = 0
             for ix, iy, blob in rows:

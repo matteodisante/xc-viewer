@@ -6,7 +6,7 @@ import argparse
 import sys
 from pathlib import Path
 
-from . import datafolder
+from . import datafolder, segmentation
 
 
 def configure_graphics() -> None:
@@ -151,6 +151,9 @@ def main(argv: list[str] | None = None) -> int:
                 folder = datafolder.use(folder)
                 if remember:
                     settings.setValue(datafolder.SETTINGS_KEY, str(folder))
+            remembered = settings.value(segmentation.SETTINGS_KEY, "", type=str)
+            if remembered in segmentation.SEGMENTATIONS:
+                segmentation.use(remembered)
             # Keep the welcome screen quick: plots and archive readers load only
             # after Start, with the chosen data folder already in place.
             from .main_window import MainWindow

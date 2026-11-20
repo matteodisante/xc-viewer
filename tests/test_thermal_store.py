@@ -95,6 +95,15 @@ def store(tmp_path):
     return ThermalStore(path)
 
 
+def test_a_segmentation_the_snapshot_lacks_is_named_not_read_as_empty(store):
+    assert store.sources == ("vilpellet",)
+    cell = store.cells()[0]
+    with pytest.raises(ValueError, match=r"prepared for Vilpellet only.*Refit"):
+        store.read_plane(cell, 125, 175, "refit")
+    with pytest.raises(ValueError, match="Unknown segmentation"):
+        store.read_plane(cell, 125, 175, "nope")
+
+
 def test_standalone_read_only_file_needs_no_archive_or_model(store, monkeypatch):
     monkeypatch.setenv("XC_VIEWER_CACHE_DIR", str(store.path.parent))
     before = store.path.stat().st_mtime_ns
@@ -414,9 +423,7 @@ def _neighbour_census(store, tmp_path, monkeypatch, products):
             "flight_id TEXT,ix INTEGER,iy INTEGER,status TEXT,edges BLOB)"
         )
         db.executemany("INSERT INTO climbs VALUES (?,?,?,?,?,?,?)", products)
-    monkeypatch.setattr(
-        "xc_viewer.thermal_index.load_saved_index", lambda **_: census
-    )
+    monkeypatch.setattr("xc_viewer.thermal_index.load_saved_index", lambda **_: census)
     monkeypatch.setattr(
         "xc_viewer.thermal_cache.segmentation_signature",
         lambda index, source: f"key-{source}",

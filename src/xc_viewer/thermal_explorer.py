@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
+from . import segmentation
 from .sqlite import connect
 from .thermal_daily import PARIS
 from .thermal_geometry import ThermalCell
@@ -203,7 +204,7 @@ class ThermalExplorer:
                 cancel=cancel,
                 use_edges=use_edges,
             )
-        if source != "vilpellet" or end < start:
+        if source not in segmentation.SEGMENTATIONS or end < start:
             raise ValueError("Invalid segmentation or time interval")
         from .thermal_cache import ClimbCache
 

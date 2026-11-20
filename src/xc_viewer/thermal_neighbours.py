@@ -15,6 +15,7 @@ import io
 import json
 import tempfile
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import ExitStack
 from pathlib import Path
 
 import numpy as np
@@ -25,7 +26,6 @@ from .thermal_geometry import ThermalCell
 from .thermal_store import ThermalStore, neighbour_frames
 
 NEIGHBOUR_LATTICE_VERSION = "10m-v1"
-SOURCES = ("vilpellet",)
 
 
 def prepare_neighbour_terrain(path, *, progress=print):
@@ -65,7 +65,7 @@ def prepare_neighbour_points(path, *, workers=4, progress=print):
     Resumable: climb products are committed per flight, and each (source, cell)
     neighbourhood is published in one transaction with its build signature.
     """
-    from .thermal_cache import segmentation_signature
+    from .thermal_cache import climbs_path, segmentation_signature
     from .thermal_index import load_saved_index
     from .thermal_prepare import prepare_climbs
 
@@ -80,15 +80,22 @@ def prepare_neighbour_points(path, *, workers=4, progress=print):
     published = {(c.ix, c.iy) for c in cells}
     targets = _squares(store)
     progress(f"{len(targets)} neighbouring squares around {len(cells)} cells")
-    prepare_climbs(census, workers=workers, progress=progress, cells=targets)
-    keys = {source: segmentation_signature(census, source) for source in SOURCES}
+    prepare_climbs(
+        census, workers=workers, progress=progress, cells=targets, sources=store.sources
+    )
+    keys = {source: segmentation_signature(census, source) for source in store.sources}
     with (
         connect(path, timeout=120) as db,
-        connect(
-            census.path.with_name("thermal-climbs.sqlite3").as_uri() + "?mode=ro",
-            uri=True,
-        ) as cache,
+        ExitStack() as stack,
     ):
+        caches = {
+            source: stack.enter_context(
+                connect(
+                    climbs_path(census.path, source).as_uri() + "?mode=ro", uri=True
+                )
+            )
+            for source in keys
+        }
         db.executescript("""
             CREATE TABLE IF NOT EXISTS neighbour_points(
                 source TEXT, ix INTEGER, iy INTEGER, level INTEGER, points BLOB,
@@ -130,7 +137,7 @@ def prepare_neighbour_points(path, *, workers=4, progress=print):
                         # product here; only this square's visitors belong to it.
                         rows = [
                             r
-                            for r in cache.execute(
+                            for r in caches[source].execute(
                                 "SELECT discipline,flight_id,edges FROM climbs "
                                 "WHERE cache_key=? AND ix=? AND iy=?",
                                 (key, frame.ix, frame.iy),

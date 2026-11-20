@@ -4,6 +4,7 @@
 import argparse
 from pathlib import Path
 
+from xc_viewer import segmentation
 from xc_viewer.locking import exclusive
 from xc_viewer.thermal_daily import prepare_daily, prepare_reference_audit
 from xc_viewer.thermal_imagery import prepare_imagery
@@ -14,9 +15,15 @@ def main():
     """Prepare the snapshot under the shared offline-writer lock."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--store", type=Path)
+    parser.add_argument(
+        "--segmentation",
+        choices=list(segmentation.SEGMENTATIONS),
+        default=segmentation.DEFAULT,
+        help="snapshot to enrich when --store is not given (default: %(default)s)",
+    )
     parser.add_argument("--skip-imagery", action="store_true")
     args = parser.parse_args()
-    store = args.store or load_store().path
+    store = args.store or load_store(args.segmentation).path
     with exclusive(
         store.with_name(".prepare"), "Another offline preparation is already running."
     ):

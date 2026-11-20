@@ -16,12 +16,13 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
+from xc_viewer import segmentation  # noqa: E402
 from xc_viewer.locking import BusyError, exclusive  # noqa: E402
 from xc_viewer.sqlite import connect  # noqa: E402
 from xc_viewer.thermal_index import build_index  # noqa: E402
 
 
-def _matches_prepared_selection(path, index):
+def _matches_prepared_selection(path, index, source="vilpellet"):
     """Resume enrichment only for the exact same census, methods and DEM selection."""
     from xc_viewer.thermal_cache import segmentation_signature
     from xc_viewer.thermal_store import ThermalStore
@@ -39,7 +40,7 @@ def _matches_prepared_selection(path, index):
             and store.activity_counts == getattr(index, "activity_counts", {})
             and metadata["archive_signature"] == index.signature
             and json.loads(metadata["segmentation_signatures"])
-            == {"vilpellet": segmentation_signature(index, "vilpellet")}
+            == {source: segmentation_signature(index, source)}
             and all(
                 store.terrain_reference(cell) == json.loads(json.dumps(reference))
                 for cell in index.cells()
@@ -65,6 +66,13 @@ def main() -> int:
     )
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument(
+        "--segmentation",
+        choices=list(segmentation.SEGMENTATIONS),
+        default=segmentation.DEFAULT,
+        help="saved climb runs to prepare (default: %(default)s); every product of "
+        "another segmentation has a file of its own beside Vilpellet's",
+    )
+    parser.add_argument(
         "--with-neighbours",
         action="store_true",
         help="Prepare zoom/pan neighbours and their maps before publishing",
@@ -77,6 +85,8 @@ def main() -> int:
         parser.error("--top must be at least 1")
     if args.workers < 1:
         parser.error("--workers must be at least 1")
+    source = args.segmentation
+    label = segmentation.get(source).label
     last = 0.0
 
     def progress(message: str) -> None:
@@ -111,14 +121,15 @@ def main() -> int:
                     print(exc)
                     return 1
                 activity = prepare_activity(
-                    index, workers=args.workers, progress=progress
+                    index, source=source, workers=args.workers, progress=progress
                 )
-                quality = audit_launches(index, progress=progress)
+                quality = audit_launches(index, progress=progress, source=source)
                 index = rank_cells(
                     index,
                     per_category=args.top,
                     quality=quality,
                     activity=activity,
+                    source=source,
                     progress=progress,
                 )
                 print(f"Ranking and launch audit: {index.quality_summary}", flush=True)
@@ -126,7 +137,7 @@ def main() -> int:
                     runs = index.activity_counts[cell.ix, cell.iy]["climb_runs"]
                     print(
                         f"{cell.terrain}: {cell.ix},{cell.iy}, {cell.flights} flights, "
-                        f"{runs} Vilpellet climbs, "
+                        f"{runs} {label} climbs, "
                         f"{cell.launches} starts, ground {cell.ground_m}",
                         flush=True,
                     )
@@ -140,18 +151,24 @@ def main() -> int:
                         }.values()
                     )
                 prepare_climbs(
-                    index, workers=args.workers, progress=progress, cells=cells
+                    index,
+                    workers=args.workers,
+                    progress=progress,
+                    cells=cells,
+                    sources=(source,),
                 )
-                target = index.path.with_name(STORE_NAME)
+                target = index.path.with_name(
+                    segmentation.product_name(STORE_NAME, source)
+                )
                 staged = target.with_suffix(".preparing.sqlite3")
-                if not _matches_prepared_selection(staged, index):
-                    if _matches_prepared_selection(target, index):
+                if not _matches_prepared_selection(staged, index, source):
+                    if _matches_prepared_selection(target, index, source):
                         # Retain completed point/map products on an unchanged rerun.
                         transfer = staged.with_suffix(".copying.sqlite3")
                         shutil.copyfile(target, transfer)
                         transfer.replace(staged)
                     else:
-                        export_store(index, destination=staged)
+                        export_store(index, destination=staged, source=source)
                 from xc_viewer.thermal_daily import (
                     prepare_daily,
                     prepare_reference_audit,
@@ -163,6 +180,16 @@ def main() -> int:
                 )
 
                 reuse_backgrounds(staged, target, with_neighbours=args.with_neighbours)
+                if source != segmentation.DEFAULT:
+                    # The imagery does not depend on the segmentation: take what the
+                    # default snapshot already holds for the same squares.
+                    reuse_backgrounds(
+                        staged,
+                        index.path.with_name(
+                            segmentation.product_name(STORE_NAME, segmentation.DEFAULT)
+                        ),
+                        with_neighbours=args.with_neighbours,
+                    )
                 reuse_prepared_points(staged, target)
                 prepare_reference_audit(staged)
                 prepare_daily(staged, progress=progress)

@@ -336,3 +336,48 @@ def test_neighbour_read_cancels_between_levels(cell):
     store = SimpleNamespace(neighbour_flights=lambda *_: [], neighbour_points=read)
     with pytest.raises(CancelledError):
         read_neighbour_points(store, cell, 100, 200, check_cancel, lambda _: None)
+
+
+def test_scene_and_neighbours_read_the_segmentation_in_use(cell, points, monkeypatch):
+    from xc_viewer import segmentation
+
+    calls = []
+    plane = PlaneData(pd.DataFrame(), 4, 3, 1, 1, 2, points=points)
+
+    def read(selected, start, end, source, **kw):
+        calls.append(("plane", source))
+        return plane
+
+    def flights(selected, source):
+        calls.append(("flights", source))
+        return []
+
+    def neighbours(selected, source, level):
+        calls.append(("points", source))
+        return pd.DataFrame(columns=["x", "y", "utc", "flight"])
+
+    store = SimpleNamespace(
+        has_points=True,
+        has_climb_ranking=True,
+        cells=lambda: [cell],
+        activity_counts={(cell.ix, cell.iy): {"climb_runs": 10}},
+        read_plane=read,
+        neighbour_flights=flights,
+        neighbour_points=neighbours,
+        background=lambda *_: None,
+    )
+    monkeypatch.setattr(
+        "xc_viewer.thermal_3d.read_surface",
+        lambda *args: (np.arange(2), np.arange(2), np.ones((2, 2)), {}),
+    )
+    monkeypatch.setattr(
+        "xc_viewer.thermal_3d.read_area_surface",
+        lambda *args: (np.arange(2), np.arange(2), np.ones((2, 2)), {}),
+    )
+    segmentation.use("refit")
+    try:
+        load_scene(store, cell, 100, 200, area_km=10)
+    finally:
+        segmentation.use(segmentation.DEFAULT)
+    assert ("plane", "refit") in calls and ("flights", "refit") in calls
+    assert {source for _, source in calls} == {"refit"}

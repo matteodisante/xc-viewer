@@ -162,6 +162,46 @@ def test_vilpellet_climb_counts_are_separate_from_visitors(widget, monkeypatch):
     assert any("Vilpellet climb" in title for title in titles)
 
 
+def test_refit_selected_reads_its_own_snapshot_and_names_its_climbs(
+    widget, monkeypatch
+):
+    from xc_viewer import segmentation
+
+    cell = widget._cells.currentData()
+    index = SimpleNamespace(
+        disciplines=("paragliders",),
+        cells=lambda: [cell],
+        defaults=lambda _: (widget._utc_bounds()[0], 500),
+        has_terrain_ranking=True,
+        has_climb_ranking=True,
+        activity_counts={(cell.ix, cell.iy): {"climb_runs": 40, "climb_flights": 3}},
+    )
+    asked = []
+    monkeypatch.setattr(
+        "xc_viewer.widgets.thermal_plane.load_store",
+        lambda key=None: asked.append(key) or index,
+    )
+    monkeypatch.setattr(widget, "_run", lambda work, done: done(work()))
+    monkeypatch.setattr(widget, "_start_plane", lambda: None)
+    segmentation.use("refit")
+    try:
+        widget._start_index()
+        assert asked == ["refit"]
+        assert "40 Refit climbs" in widget._cells.currentText()
+        assert "40 Refit climb runs from 3 flights" in widget._summary.text()
+        titles = [widget._map_ax.get_title(loc=loc) for loc in ("left", "center")]
+        assert any("Refit climb" in title for title in titles)
+        assert "Vilpellet" not in widget._summary.text()
+        # Without a snapshot for it, the status names the file the refit needs.
+        monkeypatch.setattr(
+            "xc_viewer.widgets.thermal_plane.load_store", lambda key=None: None
+        )
+        widget._start_index()
+        assert "thermal-planes-refit.sqlite3" in widget._status.text()
+    finally:
+        segmentation.use(segmentation.DEFAULT)
+
+
 def test_dem_ranked_cell_without_internal_starts_can_be_selected(widget, monkeypatch):
     from dataclasses import replace
 

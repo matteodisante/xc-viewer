@@ -15,6 +15,7 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
+from .. import segmentation
 from .flow_layout import FlowLayout
 
 
@@ -28,8 +29,9 @@ class RouteDensity(QWidget):
         self.enabled = QCheckBox("Thermal hours · all flights")
         self.enabled.setChecked(True)
         self.enabled.setToolTip(
-            "All available Vilpellet-classified flights crossing this area, both "
-            "disciplines, all dates and heights; independent of the route filters"
+            "All available flights crossing this area, classified by the segmentation "
+            "chosen at the top right, both disciplines, all dates and heights; "
+            "independent of the route filters"
         )
         self.opacity = QSpinBox()
         self.opacity.setRange(0, 100)
@@ -126,7 +128,8 @@ class RouteDensity(QWidget):
         self.range.setText(f"0.01 — {data.maximum:.0f} h/km² · log")
         self.details.setText(
             f"{data.hours:,.1f} recorded climb hours in the density frame · "
-            f"{data.step:g} m pixels · Vilpellet, all dates / heights / disciplines"
+            f"{data.step:g} m pixels · {segmentation.current().label}, "
+            "all dates / heights / disciplines"
         )
         self.details.setToolTip(
             "Cumulative recorded climb time divided by ground area. "

@@ -11,16 +11,25 @@ ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT / "src") not in sys.path:
     sys.path.insert(0, str(ROOT / "src"))
 
+from xc_viewer import segmentation  # noqa: E402
 from xc_viewer.thermal_time_prepare import prepare  # noqa: E402
 
 
 def main():
     """Build all regions and cells, or benchmark a bounded separate output."""
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--segmentation",
+        choices=list(segmentation.SEGMENTATIONS),
+        default=segmentation.DEFAULT,
+        help="saved climb runs to bin (default: %(default)s); the output file "
+        "name carries it unless it is vilpellet",
+    )
     parser.add_argument("--only", choices=["regions", "cells", "routes"])
     parser.add_argument("--limit-batches", type=int)
     parser.add_argument("--output", type=Path)
     args = parser.parse_args()
+    segmentation.use(args.segmentation)
     if args.only == "routes":
         from xc_viewer.route_density import prepare_density
 

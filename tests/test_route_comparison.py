@@ -585,6 +585,44 @@ def test_density_preparation_rejects_incomplete_vilpellet_coverage(archive, tmp_
         rd.prepare_density([disc], path=tmp_path / "density.npz")
 
 
+def test_refit_density_joins_runs_by_time_and_keeps_its_own_product(
+    archive, tmp_path, monkeypatch
+):
+    from xc_viewer import route_density as rd
+    from xc_viewer import segmentation
+    from xc_viewer.thermal_time import load_grids
+
+    disc, root, fixes = archive
+    folder = root / "segmentation/refit"
+    (folder / "model").mkdir(parents=True)
+    runs = (
+        fixes.groupby(["flight_id", "segment_id"], sort=False)
+        .t.agg(t_start="min", t_end="max", n_fixes="size")
+        .reset_index()
+    )
+    # The refit's segment numbers and fix counts are not the archive's.
+    runs["segment_id"] += 7
+    runs["n_fixes"] += 1
+    runs["phase"] = "climb"
+    runs.to_parquet(folder / "phase_segments.parquet")
+    pd.DataFrame({"flight_id": ["a"], "n_native_fixes": [3]}).to_parquet(
+        folder / "phase_coverage.parquet"
+    )
+    (folder / "model/parameters.json").write_text("{}")
+    monkeypatch.setattr(segmentation, "_current", "refit")
+    assert rd.density_path([disc]).name == "route-thermal-duration-refit.npz"
+    path = rd.prepare_density([disc], path=tmp_path / "refit.npz")
+    grids, report = load_grids(path)
+    assert report["version"] == "refit-climb-residence-v1"
+    # The same 35 supported seconds as the Vilpellet runs of the same fixes.
+    assert grids["archive/refit"].hours * 3600 == pytest.approx(35)
+    assert rd.load_density((900000, 6400000, 1010000, 6500000), [disc], path=path)
+    with pytest.raises(FileNotFoundError, match="Refit segmentation"):
+        rd.load_density(
+            (900000, 6400000, 1010000, 6500000), [disc], path=tmp_path / "none.npz"
+        )
+
+
 def test_density_coarsening_conserves_time_and_geographic_footprint():
     from xc_viewer.route_density import raster_window
     from xc_viewer.thermal_time import TimeGrid

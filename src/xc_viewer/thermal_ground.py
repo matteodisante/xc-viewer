@@ -23,7 +23,19 @@ from .thermal_orography import DATA_DIRECTORY
 
 GROUND_REFERENCE = "ign-dem-cell-min-v1"
 TERRAIN_RANKING = "ign-dem-cell-max-top-v1"
+#: Ranking by climb runs of Vilpellet's segmentation; the others prefix their own key.
 CLIMB_RANKING = "vilpellet-climb-runs-dem-max-top-v1"
+CLIMB_RANKING_SUFFIX = "-climb-runs-dem-max-top-v1"
+
+
+def climb_ranking(key):
+    """The ``ranking_reference`` of cells ranked by the climb runs of ``key``."""
+    return f"{key}{CLIMB_RANKING_SUFFIX}"
+
+
+def is_climb_ranking(reference):
+    """Whether ``reference`` names a ranking by climb runs, of any segmentation."""
+    return isinstance(reference, str) and reference.endswith(CLIMB_RANKING_SUFFIX)
 
 
 class IncompleteTerrainError(ValueError):

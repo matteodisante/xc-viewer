@@ -2,7 +2,7 @@
 
 Interactive viewer of cross-country paraglider and hang-glider flights from the French
 FFVL contest archive (CFD). It shows single tracks with their flight phases
-(Vilpellet segmentation), launch maps, route comparisons and group flights, and the
+(Vilpellet segmentation and a refit of it), launch maps, route comparisons and group flights, and the
 thermals the pilots climbed: thermal planes over 5 km cells and regional thermal-time
 maps.
 
@@ -154,9 +154,23 @@ xc-viewer-data/
 │   └── derived/
 │       ├── fixes.parquet, flights_meta.parquet   cleaned tracks
 │       ├── segmentation/vilpellet/               saved flight phases
+│       ├── segmentation/refit/                   optional: refit of Vilpellet's model
 │       └── viewer/thermal-planes/                prepared maps, indexes and caches
 └── hang_gliders/            the same layout
 ```
+
+`segmentation/refit/` holds the same three files as `segmentation/vilpellet/` and a
+`PARAMETERS.md`; the **Phases** menu at the top right of the window chooses which of the
+two every tab reads (Vilpellet by default). Folders without it work as before.
+
+The thermal products depend on that choice, so each segmentation has its own, in
+`viewer/thermal-planes/`. Vilpellet's keep their names; the refit's carry `-refit`
+(`thermal-planes-refit.sqlite3`, `thermal-climbs-refit.sqlite3`,
+`thermal-duration-refit.npz`, `route-thermal-duration-refit.npz`) or name it
+(`thermal-refit-activity.sqlite3`). The census of cells, the imagery and the terrain are
+shared. Build the refit's with `scripts/prepare_thermal_planes.py --segmentation refit`
+and `scripts/prepare_thermal_density.py --segmentation refit`; a tab whose refit product
+is missing says which file it needs.
 
 A tab whose files are missing still opens and says what it needs. Map backgrounds
 (IGN Géoplateforme, Esri hillshade) are downloaded when shown, so they need an
@@ -175,7 +189,8 @@ licences; in particular PyQt6, the window toolkit, is GPL v3.
 J. Vilpellet, A. Darmon and M. Benzaquen, *From Random Walks to Thermal Rides: Universal
 Anomalous Transport in Soaring Flights*,
 [arXiv:2601.01293](https://arxiv.org/abs/2601.01293) (2026), ported from the
-authors' code with their fitted parameters.
+authors' code with their fitted parameters. The optional **Refit** labels are the
+refit of Vilpellet's model on the FFVL flights.
 
 **Flight tracks:** FFVL contest archive (CFD),
 [paragliders](https://parapente.ffvl.fr/cfd/liste) and

@@ -69,9 +69,7 @@ def flat_earth(monkeypatch):
         "xc_viewer.thermal_time_prepare.enu_to_geodetic",
         lambda e, n, z, f: (np.asarray(n), np.asarray(e)),
     )
-    monkeypatch.setattr(
-        "xc_viewer.thermal_time_prepare.project", lambda x, y: (x, y)
-    )
+    monkeypatch.setattr("xc_viewer.thermal_time_prepare.project", lambda x, y: (x, y))
 
 
 def _runs(rows):
@@ -113,6 +111,31 @@ def test_climb_edges_stay_inside_runs_and_skip_gaps_and_flights(flat_earth):
         climb_edges(fixes, runs, origins)
     with pytest.raises(ValueError, match="origin"):
         climb_edges(fixes, runs.iloc[[0]], {"a": (0, 0, 0)})
+
+
+def test_climb_edges_by_time_ignore_the_saved_segment_numbers(flat_earth):
+    from xc_viewer.thermal_time_prepare import climb_edges
+
+    fixes = pd.DataFrame(
+        {
+            "flight_id": ["a"] * 8,
+            "segment_id": [0] * 4 + [1] * 4,
+            "t": [0, 1, 2, 3, 10, 11, 12, 13],
+            "E": np.arange(8.0),
+            "N": 0.0,
+            "z": 1000.0,
+        }
+    )
+    right = _runs([("a", 0, 1, 3, 3), ("a", 1, 10, 12, 3)])
+    wrong = _runs([("a", 9, 1, 3, 4), ("a", 4, 10, 12, 4)])
+    origins = {"a": (0, 0, 0)}
+    expected = climb_edges(fixes, right, origins)
+    result = climb_edges(fixes, wrong, origins, by_time=True)
+    for found, wanted in zip(result, expected, strict=True):
+        np.testing.assert_array_equal(found, wanted)
+    assert result[0][:, 0].tolist() == [1, 2, 4, 5]
+    with pytest.raises(ValueError, match="do not match"):
+        climb_edges(fixes, wrong, origins)
 
 
 def test_climb_edges_match_the_per_flight_census_definition(flat_earth):

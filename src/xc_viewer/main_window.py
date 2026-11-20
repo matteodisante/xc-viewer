@@ -14,7 +14,10 @@ from matplotlib.figure import Figure
 from PyQt6.QtCore import QSize, Qt
 from PyQt6.QtGui import QAction, QPalette
 from PyQt6.QtWidgets import (
+    QComboBox,
     QFileDialog,
+    QHBoxLayout,
+    QLabel,
     QMainWindow,
     QMessageBox,
     QPushButton,
@@ -26,7 +29,7 @@ from PyQt6.QtWidgets import (
 
 from xc_viewer.core.style import DISCIPLINE_COLORS
 
-from . import data, datafolder, plotting
+from . import data, datafolder, plotting, segmentation
 from .widgets.about import AboutDialog
 from .widgets.flight_picker import FlightPicker
 from .widgets.group_flights import GroupFlights
@@ -46,11 +49,8 @@ if TYPE_CHECKING:
     from .core.preproc.enu import LocalFrame
     from .core.preproc.pipeline import FlightResult
 
-# The title above a phase-coloured trajectory: the only segmentation the viewer shows.
-SEGMENTATION_TITLE = "Vilpellet segmentation"
-
-# Why the segmenter left a flight unlabelled, in words a status line can carry.  The
-# keys are Vilpellet's `phase_reason` values.
+# Why a flight is unlabelled, in words a status line can carry.  The keys are the
+# `phase_reason` values of both segmentations.
 _REASON_TEXT = {
     "flight_shorter_than_author_guard": (
         "shorter than the author's 3600-fix minimum flight"
@@ -63,6 +63,8 @@ _REASON_TEXT = {
     "dropped_flight_tail": "discarded as flight tail",
     "run_shorter_than_minimum": "every run shorter than the configured minimum",
     "search_not_followed_by_climb": "no search run confirmed by a climb",
+    "outside_saved_runs": "outside every saved run",
+    "not_in_saved_runs": "not in the saved runs",
 }
 
 
@@ -94,7 +96,9 @@ class MainWindow(QMainWindow):
         self._flight_id: str | None = None
         self._raw: data.RawTrack | None = None
         self._cleaned: FlightResult | None = None
+        self._tracks: dict[str, data.PhaseTrack | None] = {}
         self._phases: data.PhaseTrack | None = None
+        self._status_head = ""
         self._frame: LocalFrame | None = None
         self._view_key: tuple | None = None
         self._saved_views: dict[tuple, dict] = {}
@@ -160,7 +164,27 @@ class MainWindow(QMainWindow):
             "Enlarge the current map. Click again to restore the viewer controls."
         )
         self._fullscreen_button.clicked.connect(self._toggle_full_screen)
-        self._tabs.setCornerWidget(self._fullscreen_button)
+        self._segmentation_combo = QComboBox()
+        for seg in segmentation.SEGMENTATIONS.values():
+            self._segmentation_combo.addItem(seg.label, seg.key)
+        self._segmentation_combo.setCurrentIndex(
+            self._segmentation_combo.findData(segmentation.current().key)
+        )
+        self._segmentation_combo.setToolTip(
+            "Flight phases used by the Trajectory, Thermal planes, Thermal density and "
+            "Routes tabs. Vilpellet: the published model. Refit: the same model "
+            "estimated again on the FFVL flights."
+        )
+        self._segmentation_combo.currentIndexChanged.connect(
+            self._on_segmentation_changed
+        )
+        self._corner = QWidget()
+        corner_layout = QHBoxLayout(self._corner)
+        corner_layout.setContentsMargins(0, 0, 0, 0)
+        corner_layout.addWidget(QLabel("Phases:"))
+        corner_layout.addWidget(self._segmentation_combo)
+        corner_layout.addWidget(self._fullscreen_button)
+        self._tabs.setCornerWidget(self._corner)
         self._fullscreen_state = None
         self._map_focus: MapFocus | None = None
 
@@ -246,7 +270,7 @@ class MainWindow(QMainWindow):
             self._splitter,
             target,
             hide=hide,
-            keep=(self._tabs.tabBar(), self._fullscreen_button),
+            keep=(self._tabs.tabBar(), self._corner),
         )
         target.setFocus()
 
@@ -329,36 +353,81 @@ class MainWindow(QMainWindow):
         self._tabs.setCurrentIndex(0)
         self._on_flight_chosen(igc_path, discipline, flight_id)
 
-    def _vilpellet_status_text(self) -> str:
-        """A short status clause for the Vilpellet segmentation of the current flight.
+    def _phase_status_text(self) -> str:
+        """A short status clause for the chosen segmentation of the current flight.
 
         Returns:
             A sentence naming the classified fraction, or the reason nothing was
             classified when the flight failed the segmenter's own eligibility gate.
         """
+        seg = segmentation.current()
         track = self._phases
         if track is None:
-            return "Vilpellet configuration unavailable; using segment colours."
+            needs = segmentation.needs_text()
+            if seg.key == segmentation.VILPELLET.key:
+                return f"{seg.label} configuration unavailable; using segment colours."
+            return needs or f"{seg.label} segmentation unavailable."
         classified = track.fixes["phase"].ne("unclassified")
         if not classified.any():
             reasons = track.fixes["phase_reason"].value_counts()
             reason = str(reasons.index[0]) if len(reasons) else "unknown"
             text = _REASON_TEXT.get(reason, reason)
-            return f"Vilpellet segmentation: none classified ({text})."
+            return f"{seg.label} segmentation: none classified ({text})."
         percent = 100.0 * classified.mean()
-        return f"Vilpellet segmentation: {percent:.1f}% of cleaned fixes classified."
+        return f"{seg.label} segmentation: {percent:.1f}% of cleaned fixes classified."
+
+    def _select_phases(self) -> None:
+        """Use the track of the chosen segmentation for the Trajectory tab."""
+        self._phases = self._tracks.get(segmentation.current().key)
+
+    def _load_tracks(self) -> list[str]:
+        """Label the kept flight with every saved segmentation; return the failures."""
+        failures = []
+        self._tracks = {}
+        for seg in segmentation.SEGMENTATIONS.values():
+            try:
+                self._tracks[seg.key] = data.load_phases(
+                    self._cleaned.fixes, self._discipline, self._flight_id, seg.key
+                )
+            except Exception as exc:
+                self._tracks[seg.key] = None
+                failures.append(
+                    f"{seg.label} segmentation could not be decoded ({exc})."
+                )
+        self._select_phases()
+        return failures
+
+    def _on_segmentation_changed(self) -> None:
+        """Switch the flight phases of every tab to the segmentation just chosen."""
+        from PyQt6.QtCore import QSettings
+
+        key = self._segmentation_combo.currentData()
+        segmentation.use(key)
+        QSettings().setValue(segmentation.SETTINGS_KEY, key)
+        self._select_phases()
+        if self._cleaned is not None and self._cleaned.kept:
+            self._picker.set_status(f"{self._status_head} {self._phase_status_text()}")
+        elif segmentation.needs_text():
+            self._picker.set_status(segmentation.needs_text())
+        self._saved_views.clear()
+        self._thermal_plane.invalidate()
+        self._thermal_density.invalidate()
+        self._route_comparison.invalidate()
+        self._redraw()
+        self._on_tab_changed(self._tabs.currentIndex())
 
     # -- flight loading ------------------------------------------------------------
     def _on_flight_chosen(
         self, igc_path: Path, discipline: Discipline, flight_id: str
     ) -> None:
-        """Load one flight's raw and cleaned tracks and its Vilpellet segmentation."""
+        """Load one flight's raw and cleaned tracks and its flight phases."""
         self._saved_views.clear()
         self._view_key = None
         self._igc_path = igc_path
         self._discipline = discipline
         self._flight_id = flight_id
         self._cleaned = None
+        self._tracks = {}
         self._phases = None
         self._frame = None
 
@@ -394,14 +463,12 @@ class MainWindow(QMainWindow):
                 "showing raw only."
             )
 
+        self._status_head = status
         if self._cleaned is not None and self._cleaned.kept:
-            try:
-                self._phases = data.load_vilpellet_phases(
-                    self._cleaned.fixes, discipline
-                )
-                status += " " + self._vilpellet_status_text()
-            except Exception as exc:
-                status += f" Vilpellet segmentation could not be decoded ({exc})."
+            failures = self._load_tracks()
+            status += " " + self._phase_status_text()
+            if failures:
+                status += " " + " ".join(failures)
 
         if self._frame is None:
             # No pipeline-produced frame -- either it never ran that far, or it
@@ -424,10 +491,12 @@ class MainWindow(QMainWindow):
         is_3d = self._controls.is_3d
         x, y = self._controls.x_column, self._controls.y_column
         z = self._controls.z_column if is_3d else None
-        climb_only = self._controls.climb_only
-        # Extended with `climb_only`, which changes what is drawn: the saved-view
-        # lookup below keys on the whole tuple, not just the axes.
-        key = (frame_kind, x, y, z, climb_only)
+        side = self._controls.color_mode == "side"
+        climb_only = self._controls.climb_only and not side
+        compare = self._controls.color_mode == "compare"
+        # Extended with `climb_only`, `compare` and `side`, which change what is drawn:
+        # the saved-view lookup below keys on the whole tuple, not just the axes.
+        key = (frame_kind, x, y, z, climb_only, compare, side)
 
         if self._view_key is not None and self._figure.axes:
             old_primary = self._figure.axes[0]
@@ -443,11 +512,18 @@ class MainWindow(QMainWindow):
             self._saved_views[self._view_key] = view
         saved_view = self._saved_views.get(key)
 
-        if key == self._view_key and len(self._figure.axes) == 1:
+        if (
+            key == self._view_key
+            and len(self._figure.axes) == 1
+            and not compare
+            and not side
+        ):
             ax = self._figure.axes[0]
             ax.clear()
         else:
-            ax = plotting.make_axes(self._figure, is_3d=is_3d)
+            ax = plotting.make_axes(
+                self._figure, is_3d=is_3d, ribbons=compare, side=side
+            )
             self._toolbar.update()
         self._view_key = key
 
@@ -456,6 +532,7 @@ class MainWindow(QMainWindow):
 
         if self._raw is None and self._cleaned is None:
             ax.set_axis_off()
+            self._hide_second_panel()
             write = cast("Axes3D", ax).text2D if is_3d else ax.text
             write(
                 0.5,
@@ -484,6 +561,7 @@ class MainWindow(QMainWindow):
             return
 
         if frame_kind == "enu" and frame is None:
+            self._hide_second_panel()
             # Only reachable when even raw's own fallback frame failed: an IGC file
             # with no decodable position fix at all (data.raw_only_frame).
             plotting.center_message(
@@ -510,14 +588,9 @@ class MainWindow(QMainWindow):
             if self._discipline is not None
             else DISCIPLINE_COLORS["paragliders"]
         )
-        drawn = self._draw_panel(
-            ax,
-            raw_table=raw_table,
-            x=x,
-            y=y,
-            z=z,
-            climb_only=climb_only,
-            color=color,
+        draw = self._draw_side_by_side if side else self._draw_panel
+        drawn = draw(
+            ax, raw_table=raw_table, x=x, y=y, z=z, climb_only=climb_only, color=color
         )
         self._has_3d_data = is_3d and drawn
 
@@ -531,11 +604,14 @@ class MainWindow(QMainWindow):
                     elev=saved_view["elev"],
                     azim=saved_view["azim"],
                     roll=saved_view["roll"],
+                    share=True,
                 )
         elif is_3d:
             primary3d = cast("Axes3D", ax)
             primary3d.view_init(
-                elev=self._controls.elev_deg, azim=self._controls.azim_deg
+                elev=self._controls.elev_deg,
+                azim=self._controls.azim_deg,
+                share=True,
             )
             factor = 100.0 / self._controls.zoom_percent
             ax.set_xlim(self._scaled(ax.get_xlim(), factor))
@@ -559,7 +635,7 @@ class MainWindow(QMainWindow):
         climb_only: bool,
         color: str,
     ) -> bool:
-        """Draw the flight's trajectory, phase-coloured by Vilpellet on request.
+        """Draw the flight's trajectory, phase-coloured on request.
 
         Args:
             ax: The plot's axes.
@@ -574,6 +650,9 @@ class MainWindow(QMainWindow):
             Whether a non-empty trajectory was actually plotted.
         """
         phase_track = self._phases
+        compare = self._controls.color_mode == "compare"
+        differs = self._differences() if compare else None
+        self._controls.set_agreement(self._agreement_text() if compare else "")
         cleaned_table = None
         color_by: str | None = "segment_id"
         group_by: str | None = None
@@ -591,7 +670,7 @@ class MainWindow(QMainWindow):
                 phase_mode = phase_track is not None
             else:
                 phase_mode = (
-                    self._controls.color_mode == "phase"
+                    self._controls.color_mode in ("phase", "compare")
                     and phase_track is not None
                     and not phase_track.fixes.empty
                 )
@@ -600,6 +679,8 @@ class MainWindow(QMainWindow):
                     if phase_mode and phase_track is not None
                     else self._cleaned.fixes
                 )
+                if phase_mode and differs is not None:
+                    cleaned_fixes = cleaned_fixes.assign(differs=differs)
             if frame_kind == "geographic" and len(cleaned_fixes):
                 # cleaned.kept implies frame is not None: both are set together, at
                 # (and only past) pipeline stage (v) -- see data.frame_from_meta.
@@ -619,7 +700,13 @@ class MainWindow(QMainWindow):
             (raw_table is not None and len(raw_table))
             or (cleaned_table is not None and len(cleaned_table))
         )
-        title = SEGMENTATION_TITLE if color_by == "phase" else ""
+        title = (
+            f"{segmentation.current().label} segmentation"
+            if color_by == "phase"
+            else ""
+        )
+        if compare and title:
+            title += "; x marks the fixes where the other segmentation differs"
         if climb_only and cleaned_table is not None and len(cleaned_table):
             n_thermals = (
                 cleaned_table["phase_run"].nunique()
@@ -639,8 +726,19 @@ class MainWindow(QMainWindow):
 
         if climb_only and not has_data:
             plotting.center_message(
-                ax, "No Vilpellet climb fixes to show.", is_3d=z is not None
+                ax,
+                f"No {segmentation.current().label} climb fixes to show.",
+                is_3d=z is not None,
             )
+            return False
+        if compare and differs is None:
+            reason = segmentation.needs_text(segmentation.REFIT.key)
+            plotting.center_message(
+                ax,
+                f"Comparing needs both segmentations of this flight. {reason}".strip(),
+                is_3d=z is not None,
+            )
+            self._figure.axes[1].set_axis_off()
             return False
 
         plotting.plot_trajectory(
@@ -656,7 +754,114 @@ class MainWindow(QMainWindow):
             group_by=group_by,
             color_map=color_map,
         )
+        if compare and differs is not None:
+            if cleaned_table is not None and "differs" in cleaned_table:
+                marked = cleaned_table.loc[cleaned_table["differs"]]
+                plotting.mark_differences(ax, marked, x, y, z)
+                ax.legend(fontsize=8)
+            pair = self._track_pair()
+            assert pair is not None
+            plotting.draw_ribbons(
+                self._figure.axes[1],
+                [
+                    (seg.label, track.fixes)
+                    for seg, track in zip(
+                        segmentation.SEGMENTATIONS.values(), pair, strict=True
+                    )
+                ],
+                differs,
+            )
         return has_data
+
+    def _hide_second_panel(self) -> None:
+        """Blank the right panel of the side-by-side view when nothing is drawn."""
+        if len(self._figure.axes) > 1 and self._controls.color_mode == "side":
+            self._figure.axes[1].set_axis_off()
+
+    def _draw_side_by_side(
+        self, ax, *, raw_table, x, y, z, climb_only: bool, color: str
+    ) -> bool:
+        """Draw the cleaned track once per segmentation, in two linked panels.
+
+        The panels (:func:`plotting.make_axes` with ``side``) share zoom, pan and, in
+        3D, the view angle; one legend serves both. ``climb_only`` is unused: the
+        whole track is drawn.
+
+        Returns:
+            Whether both panels were drawn.
+        """
+        pair = self._track_pair()
+        self._controls.set_agreement(self._agreement_text())
+        if pair is None:
+            reason = segmentation.needs_text(segmentation.REFIT.key)
+            plotting.center_message(
+                ax,
+                f"Comparing needs both segmentations of this flight. {reason}".strip(),
+                is_3d=z is not None,
+            )
+            self._hide_second_panel()
+            return False
+        panels = self._figure.axes[:2]
+        for panel, seg, track in zip(
+            panels, segmentation.SEGMENTATIONS.values(), pair, strict=True
+        ):
+            fixes = track.fixes
+            if self._controls.frame_kind == "geographic":
+                assert self._frame is not None
+                fixes = data.cleaned_to_geographic(fixes, self._frame)
+            plotting.plot_trajectory(
+                panel,
+                raw=raw_table,
+                cleaned=fixes if self._controls.show_cleaned else None,
+                x=x,
+                y=y,
+                z=z,
+                dms=self._controls.dms,
+                cleaned_color=color,
+                color_by="phase",
+                group_by="phase_run",
+                color_map=plotting.PHASE_COLORS,
+            )
+            panel.set_title(seg.label)
+        plotting.shared_legend(self._figure, panels)
+        return True
+
+    def _track_pair(self) -> tuple[data.PhaseTrack, data.PhaseTrack] | None:
+        """The flight's tracks under both segmentations, ``None`` if one is absent."""
+        tracks = [self._tracks.get(key) for key in segmentation.SEGMENTATIONS]
+        if any(track is None or track.fixes.empty for track in tracks):
+            return None
+        return cast("tuple[data.PhaseTrack, data.PhaseTrack]", tuple(tracks))
+
+    def _differences(self):
+        """Per fix, whether both segmentations label it and give different phases."""
+        pair = self._track_pair()
+        if pair is None:
+            return None
+        a, b = (t.fixes["phase"].to_numpy(dtype=object) for t in pair)
+        return (a != b) & (a != "unclassified") & (b != "unclassified")
+
+    def _agreement_text(self) -> str:
+        """Overall and per-phase agreement of the two segmentations, for the panel."""
+        pair = self._track_pair()
+        if pair is None:
+            return ""
+        result = data.agreement(*pair)
+        first, second = (s.label for s in segmentation.SEGMENTATIONS.values())
+        if result["share"] is None:
+            return f"No fix is labelled by both {first} and {second}."
+        phases = ", ".join(
+            f"{name} {100 * v['share']:.0f}%"
+            for name, v in result["by_phase"].items()
+            if v["share"] is not None
+        )
+        return (
+            f"{first} and {second} both label {result['both_classified']:,} of "
+            f"{result['n_fixes']:,} fixes and give the same phase on "
+            f"{100 * result['share']:.1f}% of them. Overlap by phase: {phases}. "
+            f"Labelled by {first} only: {result['only_first']:,}; by {second} only: "
+            f"{result['only_second']:,}."
+        )
 
     def _reset_view(self) -> None:
         """Reset the camera only when the user explicitly requests it."""
@@ -687,6 +892,7 @@ class MainWindow(QMainWindow):
                 elev=elev if elev != old_elev else ax.elev,
                 azim=azim if azim != old_azim else ax.azim,
                 roll=ax.roll,
+                share=True,
             )
         if zoom != old_zoom:
             factor = old_zoom / zoom

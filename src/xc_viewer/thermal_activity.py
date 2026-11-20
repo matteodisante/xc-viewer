@@ -1,4 +1,7 @@
-"""Offline national census of continuous Vilpellet climb runs in 5 km cells."""
+"""Offline national census of continuous climb runs in 5 km cells.
+
+One census per saved segmentation (:mod:`xc_viewer.segmentation`), each in its own file.
+"""
 
 from __future__ import annotations
 
@@ -14,6 +17,7 @@ import numpy as np
 import pandas as pd
 import pyarrow.parquet as pq
 
+from . import segmentation
 from .core.disciplines import DISCIPLINES
 from .core.preproc.enu import LocalFrame
 from .core.vilpellet import load_vilpellet_config
@@ -24,6 +28,18 @@ from .sqlite import connect
 from .thermal_geometry import CELL_M, continuous_edges, project
 
 ACTIVITY_VERSION = "vilpellet-continuous-climb-runs-v1"
+
+
+def activity_version(source):
+    """The census version of one segmentation; Vilpellet's is the one already saved."""
+    if source == segmentation.VILPELLET.key:
+        return ACTIVITY_VERSION
+    return f"{source}-continuous-climb-runs-v1"
+
+
+def activity_path(index_path, source):
+    """The census file of ``source``, beside the cell census."""
+    return index_path.with_name(f"thermal-{source}-activity.sqlite3")
 
 
 def edge_run_cells(a, b, runs):
@@ -60,19 +76,33 @@ def edge_run_cells(a, b, runs):
     ]
 
 
-def flight_activity(fixes, segments, origin):
-    """Map saved whole-flight Vilpellet runs onto the unchanged native geometry."""
+def flight_activity(fixes, segments, origin, *, by_time=False):
+    """Map saved whole-flight climb runs onto the unchanged native geometry.
+
+    A fix belongs to the run of its segment holding its time, and each run must hold
+    the number of fixes it saved. With ``by_time`` the segment numbers of the runs are
+    not those of ``fixes``: a fix belongs to the run holding its time, whatever its
+    segment, and the counts are not checked.
+    """
     fixes = fixes.sort_values(["segment_id", "t"], kind="stable")
     t = fixes.t.to_numpy()
     ids = fixes.segment_id.to_numpy()
     labels = np.full(len(fixes), -1, dtype=np.int64)
-    for run, (segment, start, end, expected) in enumerate(segments):
-        positions = (ids == segment) & (t >= start) & (t <= end)
-        if int(positions.sum()) != int(expected):
-            raise ValueError("Saved Vilpellet runs do not match the native archive")
-        if np.any(labels[positions] >= 0):
-            raise ValueError("Overlapping saved Vilpellet climb runs")
-        labels[positions] = run
+    if by_time:
+        order = np.argsort(segments[:, 1].astype(float), kind="stable")
+        start, end = (segments[order, k].astype(float) for k in (1, 2))
+        run = np.searchsorted(start, t, side="right") - 1
+        safe = np.clip(run, 0, max(len(start) - 1, 0))
+        inside = (run >= 0) & (t <= end[safe])
+        labels[inside] = order[safe[inside]]
+    else:
+        for run, (segment, start, end, expected) in enumerate(segments):
+            positions = (ids == segment) & (t >= start) & (t <= end)
+            if int(positions.sum()) != int(expected):
+                raise ValueError("Saved runs do not match the native archive")
+            if np.any(labels[positions] >= 0):
+                raise ValueError("Overlapping saved climb runs")
+            labels[positions] = run
     supported = continuous_edges(fixes)
     use = supported & (labels[:-1] >= 0) & (labels[:-1] == labels[1:])
     indices = np.flatnonzero(use)
@@ -104,65 +134,74 @@ def flight_activity(fixes, segments, origin):
 
 
 def _task(task):
-    discipline, fid, fixes, segments, origin = task
-    return discipline, fid, flight_activity(fixes, segments, origin)
+    discipline, fid, fixes, segments, origin, by_time = task
+    return discipline, fid, flight_activity(fixes, segments, origin, by_time=by_time)
 
 
-def _validated_products(index):
-    """Require complete saved runs from the current cleaned input and protocol."""
+def _validated_products(index, source=segmentation.VILPELLET.key):
+    """Require complete saved runs from the current cleaned input and protocol.
+
+    Vilpellet's runs are checked against his configuration and the native fixes. The
+    saved runs of another segmentation carry their own parameters: they must belong to
+    the discipline, postdate the cleaned archive and share flights with the census.
+    """
+    own = source == segmentation.VILPELLET.key
+    label = segmentation.get(source).label
     config = load_vilpellet_config()
-    if config.recommendations.active or config.input_policy.source != "cleaned":
+    if own and (
+        config.recommendations.active or config.input_policy.source != "cleaned"
+    ):
         raise ValueError("Climb census requires the unfiltered cleaned-input protocol")
     products = {}
-    fingerprint = [ACTIVITY_VERSION, index.signature]
+    fingerprint = [activity_version(source), index.signature]
     for name in index.disciplines:
         root = DISCIPLINES[name].config().derived_dir
-        folder = root / "segmentation/vilpellet"
-        runs, coverage = (
-            folder / "phase_segments.parquet",
-            folder / "phase_coverage.parquet",
-        )
-        record = json.loads(
-            (folder / "model/parameters.json").read_text(encoding="utf-8")
-        )
-        expected = {
-            "discipline": name,
-            "alpha_straight_rad": config.alpha_for(name),
-            "state_names": list(config.state_names),
-            "features": asdict(config.features),
-            "majority_fixes": config.majority_fixes,
-            "eligibility": {
-                "max_mean_dt_s": config.eligibility.max_mean_dt_s,
-                "min_fixes": config.eligibility.min_fixes,
-            },
-            "input": asdict(config.input_policy),
-            "recommendations_active": False,
-            "parameters": {
-                key: getattr(config.parameters, key).tolist()
-                for key in ("emission", "transition", "initial")
-            },
-        }
-        if any(record.get(key) != value for key, value in expected.items()):
-            raise ValueError(f"Saved Vilpellet parameters differ for {name}")
-        if not (
-            config.eligibility.require_unique_times
-            and config.eligibility.require_increasing_times
-        ):
-            raise ValueError("Saved runs require the standard Vilpellet time guards")
+        saved = segmentation.paths(DISCIPLINES[name], source)
+        runs, coverage = saved["runs"], saved["coverage"]
+        record = json.loads(saved["parameters"].read_text(encoding="utf-8"))
+        if own:
+            expected = {
+                "discipline": name,
+                "alpha_straight_rad": config.alpha_for(name),
+                "state_names": list(config.state_names),
+                "features": asdict(config.features),
+                "majority_fixes": config.majority_fixes,
+                "eligibility": {
+                    "max_mean_dt_s": config.eligibility.max_mean_dt_s,
+                    "min_fixes": config.eligibility.min_fixes,
+                },
+                "input": asdict(config.input_policy),
+                "recommendations_active": False,
+                "parameters": {
+                    key: getattr(config.parameters, key).tolist()
+                    for key in ("emission", "transition", "initial")
+                },
+            }
+            if any(record.get(key) != value for key, value in expected.items()):
+                raise ValueError(f"Saved {label} parameters differ for {name}")
+            if not (
+                config.eligibility.require_unique_times
+                and config.eligibility.require_increasing_times
+            ):
+                raise ValueError(f"Saved runs require the standard {label} time guards")
+        else:
+            expected = {"discipline": DISCIPLINES[name].slug}
+            if record.get("discipline") != expected["discipline"]:
+                raise ValueError(f"Saved {label} parameters differ for {name}")
         native = root / "fixes.parquet"
         if (
             min(runs.stat().st_mtime_ns, coverage.stat().st_mtime_ns)
             < native.stat().st_mtime_ns
         ):
-            raise ValueError(f"Regenerate stale Vilpellet products for {name}")
+            raise ValueError(f"Regenerate stale {label} products for {name}")
         support = pq.read_table(
             coverage, columns=["flight_id", "n_native_fixes"]
         ).to_pandas()
-        if (
+        if own and (
             int(support.n_native_fixes.sum())
             != pq.ParquetFile(native).metadata.num_rows
         ):
-            raise ValueError(f"Incomplete Vilpellet coverage for {name}")
+            raise ValueError(f"Incomplete {label} coverage for {name}")
         with connect(index.path) as db:
             flights = {
                 r[0]
@@ -170,27 +209,36 @@ def _validated_products(index):
                     "SELECT flight_id FROM flights WHERE discipline=?", (name,)
                 )
             }
-        if set(support.flight_id.astype(str)) != flights:
-            raise ValueError(
-                f"Vilpellet flight coverage differs from census for {name}"
-            )
+        covered = set(support.flight_id.astype(str))
+        # The other segmentations come from their own preprocessing of the tracks:
+        # they may miss census flights (these stay unclassified) and label others.
+        if (covered != flights) if own else not (covered & flights):
+            raise ValueError(f"{label} flight coverage differs from census for {name}")
         products[name] = runs
         data_root = DISCIPLINES[name].config().data_root
-        for path in (runs, coverage, folder / "model/parameters.json"):
+        for path in (runs, coverage, saved["parameters"]):
             fingerprint.append(file_identity(path, data_root))
         fingerprint.append(expected)
     from .thermal_cache import segmentation_signature
 
-    fingerprint.append(segmentation_signature(index, "vilpellet"))
+    fingerprint.append(segmentation_signature(index, source))
     return products, hashlib.sha256(
         json.dumps(fingerprint, sort_keys=True).encode()
     ).hexdigest()
 
 
-def prepare_activity(index, *, workers=4, progress=print):
-    """Resume a census of all in-area flights, independent of selected cells."""
-    products, signature = _validated_products(index)
-    path = index.path.with_name("thermal-vilpellet-activity.sqlite3")
+def prepare_activity(
+    index, *, source=segmentation.VILPELLET.key, workers=4, progress=print
+):
+    """Resume a census of all in-area flights, independent of selected cells.
+
+    The census counts the climb runs of segmentation ``source`` and is saved in its
+    own file (:func:`activity_path`).
+    """
+    label = segmentation.get(source).label
+    by_time = source != segmentation.VILPELLET.key
+    products, signature = _validated_products(index, source)
+    path = activity_path(index.path, source)
     for name in ("OPENBLAS_NUM_THREADS", "OMP_NUM_THREADS", "VECLIB_MAXIMUM_THREADS"):
         os.environ[name] = "1"
     with (
@@ -216,7 +264,7 @@ def prepare_activity(index, *, workers=4, progress=print):
         if db.execute("SELECT value FROM metadata WHERE key='ready'").fetchone() == (
             "1",
         ):
-            progress("National Vilpellet climb census already complete")
+            progress(f"National {label} climb census already complete")
             return path
         pending = set()
         completed = 0
@@ -236,7 +284,7 @@ def prepare_activity(index, *, workers=4, progress=print):
                     db.execute("INSERT INTO completed VALUES (?,?)", (name, fid))
                     completed += 1
                 db.commit()
-                progress(f"Mapped {completed:,} Vilpellet flights in this run")
+                progress(f"Mapped {completed:,} {label} flights in this run")
 
             for name, runs_path in products.items():
                 saved = {
@@ -308,13 +356,14 @@ def prepare_activity(index, *, workers=4, progress=print):
                                         pd.concat(pieces.pop(fid), ignore_index=True),
                                         by_flight.pop(fid),
                                         origins[fid],
+                                        by_time,
                                     ),
                                 )
                             )
                             if len(pending) >= workers * 2:
                                 collect()
                 if pieces or by_flight:
-                    raise ValueError("Incomplete geometry for Vilpellet climb census")
+                    raise ValueError(f"Incomplete geometry for {label} climb census")
                 while pending:
                     collect()
         expected = census.execute(
@@ -325,7 +374,9 @@ def prepare_activity(index, *, workers=4, progress=print):
             raise ValueError(f"Incomplete climb census: {actual}/{expected} flights")
         db.execute("CREATE INDEX IF NOT EXISTS activity_by_cell ON activity(ix,iy)")
         db.execute("INSERT INTO metadata VALUES ('ready','1')")
-        db.execute("INSERT INTO metadata VALUES ('version',?)", (ACTIVITY_VERSION,))
+        db.execute(
+            "INSERT INTO metadata VALUES ('version',?)", (activity_version(source),)
+        )
         db.commit()
-    progress(f"National Vilpellet climb census ready: {path}")
+    progress(f"National {label} climb census ready: {path}")
     return path

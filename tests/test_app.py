@@ -49,6 +49,8 @@ truststore.inject_into_ssl = lambda: events.append("certificates")
 
 class Settings:
     def value(self, key, default="", type=str):
+        if key == "segmentation":
+            return default
         raise AssertionError("Environment folder should take priority over settings")
 
     def setValue(self, key, value):

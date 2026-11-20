@@ -17,12 +17,11 @@ from PyQt6.QtWidgets import (
     QWidget,
 )
 
-from .. import geography, thermal_regions
+from .. import geography, segmentation, thermal_regions
 from ..density_maps import view_request
 from ..density_view import AdaptiveDensity
 from ..thermal_store import load_store
 from ..thermal_time import cache_path, load_grids
-from ..thermal_time_prepare import SOURCE
 from .density_background import DensityBackgrounds
 from .flow_layout import FlowLayout
 from .help import help_buttons
@@ -143,10 +142,13 @@ class ThermalDensity(QWidget):
         self._status.setText("Reading prepared thermal hours from the data folder…")
         self._reload.setEnabled(False)
 
+        key = segmentation.current().key
+
         def read(progress, cancel):
-            grids, metadata = load_grids()
-            store = load_store()
-            return grids, metadata, store.cells() if store else [], cache_path().parent
+            grids, metadata = load_grids(cache_path(key))
+            store = load_store(key)
+            folder = cache_path(key).parent
+            return grids, metadata, store.cells() if store else [], folder
 
         self._worker = _Worker(read, self)
         self._worker.failed.connect(self._status.setText)
@@ -209,9 +211,10 @@ class ThermalDensity(QWidget):
 
     def _panels(self):
         data = self._item.currentData()
+        source = segmentation.current().key
         if self._area.currentData() == "regions":
             names = list(thermal_regions.REGIONS) if data is None else [data]
-            return [(f"region/{name}/{SOURCE}", name) for name in names]
+            return [(f"region/{name}/{source}", name) for name in names]
         if data is None:
             return []
         what, value = data
@@ -221,7 +224,7 @@ class ThermalDensity(QWidget):
             if (c.terrain == value if what == "group" else (c.ix, c.iy) == value)
         ]
         return [
-            (f"cell/{c.ix}/{c.iy}/{SOURCE}", f"{c.terrain} #{self._rank(c)}")
+            (f"cell/{c.ix}/{c.iy}/{source}", f"{c.terrain} #{self._rank(c)}")
             for c in cells
         ]
 
@@ -240,7 +243,10 @@ class ThermalDensity(QWidget):
                 only = self._area.currentData()
                 self._status.setText(
                     f"This data folder has no prepared climbing-time maps for "
-                    f"the {only}. Choose a complete data folder."
+                    f"the {only} from the {segmentation.current().label} "
+                    "segmentation. Choose a complete data folder, or prepare them "
+                    "with scripts/prepare_thermal_density.py --segmentation "
+                    f"{segmentation.current().key}."
                 )
             self._canvas.draw_idle()
             return
@@ -372,7 +378,8 @@ class ThermalDensity(QWidget):
         if not self._grids:
             return
         self._status.setText(
-            "Vilpellet · all archived dates and heights · 50 m grid · hours/km² "
+            f"{segmentation.current().label} · all archived dates and heights · "
+            "50 m grid · hours/km² "
             f"(not probability). {self._map_note} "
             + (
                 f"{len(self._map_errors)} map(s) unavailable; "

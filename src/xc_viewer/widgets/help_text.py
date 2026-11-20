@@ -77,14 +77,29 @@ track is drawn and the status line gives the reason.</li>
 <h3>Colours of the cleaned track</h3>
 <ul>
 <li><b>Flight phase:</b> each cleaned fix carries one of three labels, given by the
-Vilpellet segmentation. <b>Climb</b>: circling upwards, usually in a thermal.
+segmentation chosen in <i>Phases</i> at the top right: Vilpellet's, or the refit of
+his model on the FFVL flights. <b>Climb</b>: circling upwards, usually in a thermal.
 <b>Search</b>: turning without a steady climb, typically looking for lift.
 <b>Transition</b>: flying fairly straight, usually gliding between thermals. Grey
 parts are unclassified. The legend names the colours.</li>
 <li><b>Cleaning segment:</b> one colour per continuous piece of the cleaned
 track.</li>
 <li><b>Discipline:</b> one colour for paragliders, another for hang gliders.</li>
+<li><b>Compare phases:</b> the track in the colours of the chosen segmentation, with
+a cross on every fix where the other one gives a different phase, and below it
+two ribbons along the time of the flight, Vilpellet above and Refit below, with a
+black row where they differ. The line under the controls gives the share of fixes
+on which they agree among those both label, and for each phase the overlap: the
+fixes it has in both, divided by the fixes it has in at least one.</li>
+<li><b>Side by side phases:</b> the same track drawn twice, in the colours of
+Vilpellet on the left and of the refit on the right, under one legend. The two
+panels share zoom and pan, and in 3D the viewing angle, so dragging one moves the
+other. The line under the controls gives the agreement, as in <i>Compare
+phases</i>.</li>
 </ul>
+<p>The choice in <i>Phases</i> also sets the segmentation behind the thermal planes,
+thermal density and routes tabs. Each of them needs products prepared for it, and
+says so when they are missing.</p>
 <p>With <b>Thermals only</b>, the title counts the <b>climb runs</b> (unbroken
 stretches labelled climb) and adds up their minutes. A run is not always a separate
 thermal: a pilot who leaves a thermal briefly and comes back makes two runs.</p>

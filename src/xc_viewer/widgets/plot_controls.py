@@ -107,13 +107,19 @@ class PlotControls(QWidget):
         self._color_combo.addItem("Flight phase", "phase")
         self._color_combo.addItem("Cleaning segment", "segment")
         self._color_combo.addItem("Discipline", "single")
+        self._color_combo.addItem("Compare phases", "compare")
+        self._color_combo.addItem("Side by side phases", "side")
         self._color_combo.setToolTip(
-            "Colour of the cleaned track: Vilpellet flight phase, preprocessing "
-            "segment, or one colour per discipline."
+            "Colour of the cleaned track: flight phase of the chosen segmentation, "
+            "both segmentations compared on one track or drawn side by side, "
+            "preprocessing segment, or one colour per discipline."
         )
         self._chk_climb_only = QCheckBox("Thermals only (climb)")
         self._btn_save_pdf = QPushButton("Save PDF…")
         self._info, self._howto = help_buttons("trajectory", self)
+        self._agreement = QLabel()
+        self._agreement.setWordWrap(True)
+        self._agreement.setVisible(False)
 
         display_row = FlowLayout()
         display_row.addWidget(self._chk_dms)
@@ -130,6 +136,7 @@ class PlotControls(QWidget):
         layout.addWidget(axes_box)
         layout.addWidget(self._box_3d_view)
         layout.addLayout(display_row)
+        layout.addWidget(self._agreement)
 
         self._populate_axes()
         self._on_3d_toggled(False)
@@ -207,8 +214,13 @@ class PlotControls(QWidget):
 
     @property
     def color_mode(self) -> str:
-        """``phase``, ``segment``, or ``single`` for the cleaned trajectory."""
+        """``phase``, ``compare``, ``side``, ``segment`` or ``single`` for the track."""
         return self._color_combo.currentData()
+
+    def set_agreement(self, text: str) -> None:
+        """Show how far the two segmentations agree; hidden when ``text`` is empty."""
+        self._agreement.setText(text)
+        self._agreement.setVisible(bool(text))
 
     @property
     def climb_only(self) -> bool:

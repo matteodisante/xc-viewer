@@ -19,6 +19,7 @@ from xc_viewer.plotting import (
     make_axes,
     plot_trajectory,
     save_pdf,
+    shared_legend,
 )
 
 
@@ -267,4 +268,28 @@ def test_phase_colour_changes_cover_every_native_edge_without_crossing_gaps(is_3
         xy = list(zip(segment.E, segment.N, strict=True))
         expected.extend(pairwise(xy))
     assert actual == expected
+    plt.close(fig)
+
+
+@pytest.mark.parametrize("is_3d", [False, True])
+def test_side_panels_share_limits_and_one_legend(is_3d):
+    fig = plt.figure()
+    left = make_axes(fig, is_3d=is_3d, side=True)
+    right = fig.axes[1]
+    assert fig.axes == [left, right]
+    for ax, labels in ((left, ["climb", "search"]), (right, ["search", "climb"])):
+        for label in labels:
+            ax.plot([0, 1], [0, 1], *([[0, 1]] if is_3d else []), label=label)
+        ax.legend()
+    left.set_xlim(2, 3)
+    left.set_ylim(4, 5)
+    assert right.get_xlim() == (2, 3) and right.get_ylim() == (4, 5)
+    if is_3d:
+        left.view_init(elev=10, azim=20, share=True)
+        assert (right.elev, right.azim) == (10, 20)
+
+    shared_legend(fig, fig.axes)
+    assert left.get_legend() is None and right.get_legend() is None
+    (legend,) = fig.legends
+    assert [t.get_text() for t in legend.get_texts()] == ["climb", "search"]
     plt.close(fig)

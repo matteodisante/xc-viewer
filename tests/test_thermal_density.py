@@ -155,3 +155,42 @@ def test_saved_cell_maps_are_reused_offline_with_exact_zoom_extent(
     assert info["saved_planes"]
     assert result.shape == (20, 20, 3)
     assert (result == 128).all()
+
+
+def test_refit_selected_reads_its_own_hours_and_cells(qapp, monkeypatch, tmp_path):
+    from xc_viewer import segmentation
+    from xc_viewer.thermal_geometry import ThermalCell
+    from xc_viewer.widgets.thermal_density import ThermalDensity
+
+    cell = ThermalCell(190, 1306, "High mountains", 10, 5, 400.0, 3700.0)
+    asked = []
+
+    def grids(path=None):
+        asked.append(("grids", path.name))
+        return {}, {"path": path.name}
+
+    def store(key=None):
+        asked.append(("store", key))
+        return SimpleNamespace(cells=lambda: [cell])
+
+    module = "xc_viewer.widgets.thermal_density"
+    monkeypatch.setattr(
+        f"{module}.cache_path",
+        lambda key=None: (
+            tmp_path / segmentation.product_name("thermal-duration.npz", key)
+        ),
+    )
+    monkeypatch.setattr(f"{module}.load_grids", grids)
+    monkeypatch.setattr(f"{module}.load_store", store)
+    view = ThermalDensity()
+    segmentation.use("refit")
+    try:
+        view._load()
+        view._worker.wait()
+        qapp.processEvents()
+    finally:
+        segmentation.use(segmentation.DEFAULT)
+        view.shutdown()
+    assert asked == [("grids", "thermal-duration-refit.npz"), ("store", "refit")]
+    assert view._cells == [cell]
+    assert view._metadata == {"path": "thermal-duration-refit.npz"}

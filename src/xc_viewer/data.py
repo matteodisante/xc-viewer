@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Literal
 import numpy as np
 import pandas as pd
 
+from . import segmentation
 from .core import igc
 from .core.disciplines import DISCIPLINES, Discipline
 from .core.preproc.altchannel import AltChannel, adopt_alt_channel
@@ -57,7 +58,7 @@ class RawTrack:
 
 @dataclass(frozen=True)
 class PhaseTrack:
-    """Every cleaned fix of one flight, coloured by its Vilpellet flight phase.
+    """Every cleaned fix of one flight, coloured by its flight phase.
 
     ``phase_run`` changes at every phase, preprocessing-segment, or temporal-gap
     boundary.  The viewer uses it as a line-group key, preventing equal phases that
@@ -205,9 +206,163 @@ def load_vilpellet_phases(
     )
     return PhaseTrack(
         fixes=track.fixes,
-        mapping_method="vilpellet-fitted-2019",
+        mapping_method=segmentation.VILPELLET.mapping_method,
         coverage=native_coverage_summary(track.fixes),
     )
+
+
+def label_from_runs(
+    cleaned_fixes: pd.DataFrame, runs: pd.DataFrame, *, tolerance_s: float = 1e-3
+) -> pd.DataFrame:
+    """Give each fix the phase of the saved run whose [t_start, t_end] holds its time.
+
+    The join is on time only: the ``segment_id`` of saved runs is not the viewer's.
+    Fixes in no run stay ``unclassified``, with ``phase_reason`` ``outside_saved_runs``;
+    the others carry ``classified``.
+
+    Args:
+        cleaned_fixes: One flight's cleaned fixes, with ``segment_id`` and ``t``.
+        runs: Its saved runs (``phase``, ``t_start``, ``t_end``), in the same time base.
+        tolerance_s: Slack on the run ends, for floating-point times.
+
+    Returns:
+        The fixes sorted by segment and time, with the label and run columns the
+        drawing code expects: ``phase``, ``phase_reason``, ``track_run``, ``phase_run``.
+    """
+    from .core.vilpellet.pipeline import add_run_columns
+
+    out = cleaned_fixes.sort_values(["segment_id", "t"], kind="stable")
+    out = out.reset_index(drop=True)
+    out["phase"] = "unclassified"
+    out["phase_reason"] = "outside_saved_runs"
+    runs = runs.sort_values("t_start", kind="stable")
+    if len(runs) and len(out):
+        start = runs["t_start"].to_numpy(dtype=float)
+        end = runs["t_end"].to_numpy(dtype=float)
+        t = out["t"].to_numpy(dtype=float)
+        run = np.searchsorted(start - tolerance_s, t, side="right") - 1
+        safe = np.clip(run, 0, len(runs) - 1)
+        inside = (run >= 0) & (t <= end[safe] + tolerance_s)
+        out.loc[inside, "phase"] = runs["phase"].to_numpy(dtype=object)[safe[inside]]
+        out.loc[inside, "phase_reason"] = "classified"
+    return add_run_columns(out)
+
+
+def load_saved_phases(
+    cleaned_fixes: pd.DataFrame,
+    discipline: Discipline,
+    flight_id: str,
+    key: str,
+) -> PhaseTrack | None:
+    """Label one cleaned flight from the saved runs of segmentation ``key``.
+
+    Only this flight's rows are read: ``phase_segments.parquet`` is sorted by flight, so
+    the filter skips every other row group.
+
+    Args:
+        cleaned_fixes: One retained, fully preprocessed flight, in the time base of
+            ``fixes.parquet``.
+        discipline: Its viewer discipline; names the archive root.
+        flight_id: The flight identifier of the saved tables.
+        key: A key of :data:`xc_viewer.segmentation.SEGMENTATIONS`.
+
+    Returns:
+        A phase track, or ``None`` when the saved files are missing. A flight with no
+        run stays entirely ``unclassified``, and ``coverage["fixes_by_reason"]`` names
+        the status the coverage table gives it.
+    """
+    import pyarrow.parquet as pq
+
+    from .core.coverage import native_coverage_summary
+
+    seg = segmentation.get(key)
+    saved = segmentation.paths(discipline, key)
+    if not (saved["runs"].is_file() and saved["coverage"].is_file()):
+        return None
+    where = [("flight_id", "=", str(flight_id))]
+    runs = pq.read_table(saved["runs"], filters=where).to_pandas()
+    fixes = label_from_runs(cleaned_fixes, runs)
+    if runs.empty:
+        status = pq.read_table(
+            saved["coverage"], columns=["status"], filters=where
+        ).to_pandas()["status"]
+        reason = str(status.iloc[0]) if len(status) else "not_in_saved_runs"
+        fixes["phase_reason"] = reason
+    return PhaseTrack(
+        fixes=fixes,
+        mapping_method=seg.mapping_method,
+        coverage=native_coverage_summary(fixes),
+    )
+
+
+def load_refit_phases(
+    cleaned_fixes: pd.DataFrame, discipline: Discipline, flight_id: str
+) -> PhaseTrack | None:
+    """Label one cleaned flight with the saved refit runs (``refit-2026``).
+
+    See :func:`load_saved_phases`.
+    """
+    return load_saved_phases(
+        cleaned_fixes, discipline, flight_id, segmentation.REFIT.key
+    )
+
+
+def load_phases(
+    cleaned_fixes: pd.DataFrame,
+    discipline: Discipline,
+    flight_id: str,
+    key: str | None = None,
+) -> PhaseTrack | None:
+    """Label one cleaned flight with segmentation ``key``, by default the one in use."""
+    key = segmentation.current().key if key is None else key
+    if key == segmentation.VILPELLET.key:
+        return load_vilpellet_phases(cleaned_fixes, discipline)
+    return load_saved_phases(cleaned_fixes, discipline, flight_id, key)
+
+
+def agreement(first: PhaseTrack, second: PhaseTrack) -> dict:
+    """How far two segmentations of the same fixes give the same phase.
+
+    Both tracks must come from the same cleaned fixes, so that row ``i`` is the same
+    fix in each.
+
+    Args:
+        first: One segmentation of the flight.
+        second: Another segmentation of the same fixes.
+
+    Returns:
+        ``n_fixes``; ``both_classified`` (fixes labelled by both); ``agree`` (of
+        those, fixes given the same phase); ``share`` (``agree / both_classified``,
+        ``None`` when no fix is labelled by both); ``only_first`` and ``only_second``
+        (fixes only one of them labels); and ``by_phase``, for each phase the fixes it
+        has in both (``both``), in at least one (``either``) and ``share``
+        (``both / either``, ``None`` when ``either`` is 0).
+    """
+    a = first.fixes["phase"].to_numpy(dtype=object)
+    b = second.fixes["phase"].to_numpy(dtype=object)
+    if len(a) != len(b):
+        raise ValueError("Both segmentations must label the same fixes")
+    labelled_a, labelled_b = a != "unclassified", b != "unclassified"
+    both = labelled_a & labelled_b
+    agree = int((both & (a == b)).sum())
+    by_phase = {}
+    for phase in sorted(set(a[labelled_a]) | set(b[labelled_b])):
+        in_both = int(((a == phase) & (b == phase)).sum())
+        either = int(((a == phase) | (b == phase)).sum())
+        by_phase[phase] = {
+            "both": in_both,
+            "either": either,
+            "share": in_both / either if either else None,
+        }
+    return {
+        "n_fixes": len(a),
+        "both_classified": int(both.sum()),
+        "agree": agree,
+        "share": agree / int(both.sum()) if both.any() else None,
+        "only_first": int((labelled_a & ~labelled_b).sum()),
+        "only_second": int((labelled_b & ~labelled_a).sum()),
+        "by_phase": by_phase,
+    }
 
 
 def climb_only(fixes: pd.DataFrame) -> pd.DataFrame:

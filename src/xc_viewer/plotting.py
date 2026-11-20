@@ -42,7 +42,9 @@ _AXIS_UNITS = {
 PHASE_COLORS = {**_MANUSCRIPT_PHASE_COLORS, "unclassified": UNCLASSIFIED_COLOR}
 
 
-def make_axes(fig: Figure, *, is_3d: bool) -> Axes:
+def make_axes(
+    fig: Figure, *, is_3d: bool, ribbons: bool = False, side: bool = False
+) -> Axes:
     """Fresh (2D or 3D) axes on ``fig``, replacing whatever was there.
 
     Matplotlib cannot switch an existing ``Axes`` between 2D and 3D in place, so every
@@ -51,12 +53,144 @@ def make_axes(fig: Figure, *, is_3d: bool) -> Axes:
     Args:
         fig: The figure to draw on; it is cleared first.
         is_3d: Whether the axes carry a third dimension.
+        ribbons: Whether to leave a strip under the plot for :func:`draw_ribbons`; it
+            becomes ``fig.axes[1]``.
+        side: Whether to draw two panels side by side, with room under them for
+            :func:`shared_legend`. The second becomes ``fig.axes[1]``; its limits, and
+            in 3D its view angle, follow the first, so zoom, pan and rotation act on
+            both (:meth:`Axes3D.view_init` then needs ``share=True``). Exclusive with
+            ``ribbons``.
 
     Returns:
-        The new axes.
+        The new (main) axes, always ``fig.axes[0]``.
     """
     fig.clf()
-    return fig.add_subplot(1, 1, 1, projection="3d" if is_3d else None)
+    projection = "3d" if is_3d else None
+    if side:
+        grid = fig.add_gridspec(1, 2, wspace=0.25, bottom=0.18)
+        left = fig.add_subplot(grid[0], projection=projection)
+        shared = {"sharex": left, "sharey": left}
+        if is_3d:
+            fig.add_subplot(
+                grid[1], projection="3d", sharez=left, shareview=left, **shared
+            )
+        else:
+            fig.add_subplot(grid[1], **shared)
+        return left
+    if not ribbons:
+        return fig.add_subplot(1, 1, 1, projection=projection)
+    grid = fig.add_gridspec(2, 1, height_ratios=[4, 1], hspace=0.28)
+    ax = fig.add_subplot(grid[0], projection=projection)
+    fig.add_subplot(grid[1])
+    return ax
+
+
+def shared_legend(fig: Figure, axes) -> None:
+    """One legend under ``fig`` for the entries of ``axes``, each label once.
+
+    The legends of the axes themselves are removed.
+    """
+    entries: dict[str, object] = {}
+    for ax in axes:
+        for handle, label in zip(*ax.get_legend_handles_labels(), strict=True):
+            entries.setdefault(label, handle)
+        if ax.get_legend() is not None:
+            ax.get_legend().remove()
+    if entries:
+        fig.legend(
+            list(entries.values()),
+            list(entries),
+            loc="lower center",
+            ncol=len(entries),
+            fontsize=8,
+        )
+
+
+def _spans(t, label, track_run):
+    """Stretches of one label inside one physical track, as (label, start, width).
+
+    Each stretch ends one median step after its last fix, so a one-fix run is visible.
+    """
+    import numpy as np
+
+    t = np.asarray(t, dtype=float)
+    if not len(t):
+        return []
+    label = np.asarray(label, dtype=object)
+    track_run = np.asarray(track_run)
+    step = np.diff(t)
+    step = float(np.median(step[step > 0])) if (step > 0).any() else 1.0
+    change = np.r_[True, (label[1:] != label[:-1]) | (track_run[1:] != track_run[:-1])]
+    first = np.flatnonzero(change)
+    last = np.r_[first[1:] - 1, len(t) - 1]
+    return [
+        (label[a], t[a], t[b] - t[a] + step) for a, b in zip(first, last, strict=True)
+    ]
+
+
+def draw_ribbons(ax: Axes, rows, differs=None, *, labels=None) -> None:
+    """Phase ribbons along the time axis of one track, one row per segmentation.
+
+    Args:
+        ax: The strip axes, from :func:`make_axes`.
+        rows: ``[(name, fixes), ...]``, each ``fixes`` carrying ``t``, ``phase`` and
+            ``track_run``, in the same row order. The first is drawn on top.
+        differs: Optional boolean array over the same rows: a last row, in black,
+            marks the fixes where the segmentations disagree.
+        labels: The phase names to colour; those of :data:`PHASE_COLORS` by default.
+    """
+    colors = PHASE_COLORS if labels is None else labels
+    names = [name for name, _ in rows]
+    if differs is not None:
+        names.append("differ")
+    for i, (_, fixes) in enumerate(rows):
+        y = len(names) - 1 - i
+        for phase, start, width in _spans(
+            fixes["t"], fixes["phase"], fixes["track_run"]
+        ):
+            ax.broken_barh(
+                [(start / 60.0, width / 60.0)],
+                (y - 0.4, 0.8),
+                facecolors=colors.get(phase, UNCLASSIFIED_COLOR),
+                linewidth=0,
+            )
+    if differs is not None:
+        fixes = rows[0][1]
+        for flag, start, width in _spans(fixes["t"], differs, fixes["track_run"]):
+            if flag:
+                ax.broken_barh(
+                    [(start / 60.0, width / 60.0)],
+                    (-0.4, 0.8),
+                    facecolors="black",
+                    linewidth=0,
+                )
+    ax.set_yticks(range(len(names)), labels=names[::-1])
+    ax.set_ylim(-0.6, len(names) - 0.4)
+    ax.set_xlabel("time [min]")
+    ax.autoscale(axis="x")
+    ax.margins(x=0.01)
+    for side in ("top", "right"):
+        ax.spines[side].set_visible(False)
+
+
+def mark_differences(ax: Axes, table, x: str, y: str, z: str | None = None) -> None:
+    """Mark the fixes of ``table`` where two segmentations disagree."""
+    if not len(table):
+        return
+    kwargs = {
+        "marker": "x",
+        "color": "black",
+        "s": 14,
+        "linewidths": 0.8,
+        "zorder": 6,
+        "label": "phases differ",
+    }
+    if z is None:
+        ax.scatter(table[x].to_numpy(), table[y].to_numpy(), **kwargs)
+    else:
+        ax.scatter(
+            table[x].to_numpy(), table[y].to_numpy(), table[z].to_numpy(), **kwargs
+        )
 
 
 def center_message(ax: Axes, text: str, *, is_3d: bool) -> None:

@@ -11,17 +11,18 @@ from pathlib import Path
 
 import pandas as pd
 
+from . import segmentation
 from .core.config import load_preproc_config
 from .core.igc import _altitude, _lat, _lon, _valid_time_of_day
 from .geography import TERRAIN_ORDER
 from .sqlite import connect
 from .thermal_geometry import ThermalCell
 from .thermal_ground import (
-    CLIMB_RANKING,
     TERRAIN_RANKING,
     IncompleteTerrainError,
     cell_band,
     cell_ground,
+    climb_ranking,
     fetch_terrain_reference,
     terrain_reference,
 )
@@ -93,8 +94,12 @@ def launch_quality(path, horizontal_limit, vertical_limit):
     return "accepted" if witnesses >= 2 else "unchecked"
 
 
-def audit_launches(index, progress=print):
-    """Persist the origin screen separately, keeping reusable climb keys unchanged."""
+def audit_launches(index, progress=print, source="vilpellet"):
+    """Persist the origin screen separately, keeping reusable climb keys unchanged.
+
+    The screen does not depend on the segmentation. Each one saves it in a file of its
+    own, so that preparing another segmentation never writes into Vilpellet's.
+    """
     cfg = load_preproc_config().fix
     policy = hashlib.sha256(
         json.dumps(
@@ -110,7 +115,9 @@ def audit_launches(index, progress=print):
             ]
         ).encode()
     ).hexdigest()
-    path = index.path.with_name("thermal-launch-quality.sqlite3")
+    path = index.path.with_name(
+        segmentation.product_name("thermal-launch-quality.sqlite3", source)
+    )
     with connect(index.path) as census, connect(path) as db:
         db.execute(
             "CREATE TABLE IF NOT EXISTS origins (policy TEXT,discipline TEXT,"
@@ -195,11 +202,18 @@ def _cell_terrain(cell, index):
 
 
 def rank_cells(
-    index, *, per_category=3, quality=None, activity=None, progress=lambda _: None
+    index,
+    *,
+    per_category=3,
+    quality=None,
+    activity=None,
+    source="vilpellet",
+    progress=lambda _: None,
 ):
     """Select the busiest visited cells in each band of highest IGN terrain elevation.
 
-    With an activity census, rank Vilpellet climb runs instead of visitors.
+    With an activity census, rank the climb runs of segmentation ``source`` instead of
+    visitors.
     Visit candidates in descending score order and stop when every band is
     full. No unexamined cell can outrank a winner. Starts are audit data only;
     a visited cell needs no internal launch to qualify. A cell the IGN DEM does
@@ -245,11 +259,12 @@ def rank_cells(
     )
     cells = visits.merge(launches, on=["ix", "iy"], how="left")
     metric = "flights"
+    label = segmentation.get(source).label
     if activity is not None:
         with connect(Path(activity).as_uri() + "?mode=ro", uri=True) as db:
             metadata = dict(db.execute("SELECT key,value FROM metadata"))
             if metadata.get("ready") != "1":
-                raise ValueError("National Vilpellet climb census is incomplete")
+                raise ValueError(f"National {label} climb census is incomplete")
             counts = pd.read_sql_query(
                 "SELECT ix,iy,SUM(climb_runs) climb_runs,COUNT(*) climb_flights "
                 "FROM activity GROUP BY ix,iy",
@@ -258,7 +273,7 @@ def rank_cells(
         cells = cells.merge(counts, on=["ix", "iy"], validate="one_to_one")
         metric = "climb_runs"
         summary["activity_signature"] = metadata["signature"]
-        summary["ranking_method"] = "vilpellet"
+        summary["ranking_method"] = source
         summary["ranking_unit"] = "continuous_climb_runs"
     cells = cells.sort_values([metric, "ix", "iy"], ascending=[False, True, True])
     groups = {band: [] for band in TERRAIN_ORDER}
@@ -287,7 +302,7 @@ def rank_cells(
         band = cell_band(reference)
         progress(
             f"Terrain candidate {examined}: {cell.ix}/{cell.iy}, "
-            + (f"{int(c.climb_runs):,} Vilpellet climbs, " if activity else "")
+            + (f"{int(c.climb_runs):,} {label} climbs, " if activity else "")
             + f"{cell.flights:,} flights, highest {reference['maximum_m']:.1f} m, "
             + band
         )
@@ -304,7 +319,9 @@ def rank_cells(
         if all(len(group) == per_category for group in groups.values()):
             break
     result = [cell for group in groups.values() for cell in group]
-    summary["ranking_reference"] = CLIMB_RANKING if activity else TERRAIN_RANKING
+    summary["ranking_reference"] = (
+        climb_ranking(source) if activity else TERRAIN_RANKING
+    )
     summary["terrain_candidates_examined"] = examined
     summary["terrain_excluded"] = excluded
     summary["visited_cells"] = len(visits)

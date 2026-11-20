@@ -1021,7 +1021,7 @@ dev = [
 [package.metadata]
 requires-dist = [
     { name = "filelock", specifier = ">=3.12" },
-    { name = "matplotlib", specifier = ">=3.8" },
+    { name = "matplotlib", specifier = ">=3.10" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "pandas", specifier = ">=3.0" },
     { name = "pillow", specifier = ">=10.0" },

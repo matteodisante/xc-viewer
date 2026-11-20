@@ -231,7 +231,7 @@ def _phases() -> str:
 J.&nbsp;Vilpellet, A.&nbsp;Darmon and M.&nbsp;Benzaquen, <a href="{VILPELLET_PAPER}">
 <i>From Random Walks to Thermal Rides: Universal Anomalous Transport in Soaring
 Flights</i></a> (2026). It is ported from the authors' code and uses their fitted
-parameters: nothing is refitted here.</p>
+parameters: the viewer refits nothing.</p>
 <ol>
 <li><b>Which flights.</b> Only tracks logged at a mean interval of at most
 {gate.max_mean_dt_s:g} s, with at least {gate.min_fixes:,} fixes and strictly
@@ -262,6 +262,18 @@ track.</li>
 <p>The authors ran the method on raw GNSS tracks; here it runs on the cleaned
 tracks, so positions are smoothed twice. Short runs are the least reliable, as the
 authors warn.</p>
+<p><b>Refit.</b> The <i>Phases</i> menu at the top right of the window also offers
+the same model with its parameters estimated again on the FFVL flights, by
+expectation&ndash;maximisation (Baum&ndash;Welch) on a random sample of the flights
+logged once per second. It is credited as the refit of Vilpellet's model on the FFVL
+flights. Its runs are saved in <code>segmentation/refit/</code> of each discipline,
+beside those of Vilpellet, with the file <code>PARAMETERS.md</code> that records its
+parameters, training sample and rules. The viewer joins them to the fixes of a flight
+by flight and time. Flights logged every 1 to 5 s are labelled; no minimum flight
+length applies and no run is discarded. <i>Compare phases</i> and
+<i>Side by side phases</i>, in the Trajectory tab, draw both segmentations of one
+flight and give their agreement. A tab shows the refit only if its prepared products
+exist for it; otherwise it says what to prepare.</p>
 {_back()}
 """
 
@@ -326,11 +338,11 @@ def _cells() -> str:
 <ol>
 <li><b>Grid:</b> fixed {cell} squares in the French Lambert-93 projection
 (EPSG:2154), over metropolitan France.</li>
-<li><b>Count:</b> continuous Vilpellet climb runs, over all dates and both
-disciplines. A run counts once in a cell, even if it leaves and comes back; two runs of
-one flight count twice; length and number of fixes add no weight. Flights are labelled
-whole before being cut to the cell, so a climb counts even when the take-off was
-elsewhere.</li>
+<li><b>Count:</b> continuous climb runs of the segmentation in use (Vilpellet or the
+refit), over all dates and both disciplines. A run counts once in a cell, even if it
+leaves and comes back; two runs of one flight count twice; length and number of fixes
+add no weight. Flights are labelled whole before being cut to the cell, so a climb
+counts even when the take-off was elsewhere.</li>
 <li><b>Category:</b> from the highest of the cell's elevation values (see Maps and
 terrain). A single high sample is enough to lift a cell into a higher category.</li>
 <li><b>Ties</b> go to the lower grid column, then row. There is no regional quota and
@@ -382,8 +394,8 @@ def _hours() -> str:
 <p>For each ground pixel B, D(B) = seconds of climbing above B / (3600 &times; area of
 B in km&sup2;), in hours per km&sup2;.</p>
 <ol>
-<li><b>Edges:</b> defined as for plane crossings, over every saved Vilpellet climb run
-of the archive.</li>
+<li><b>Edges:</b> defined as for plane crossings, over every saved climb run of the
+segmentation in use (Vilpellet or the refit) in the archive.</li>
 <li><b>Position:</b> fixes are projected to Lambert-93; every altitude is pooled.</li>
 <li><b>Sharing out the time:</b> along each edge the glider is assumed to move in a
 straight line at constant speed, and the edge's seconds go to the {pixel} pixels it

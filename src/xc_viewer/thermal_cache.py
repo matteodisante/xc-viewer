@@ -12,6 +12,8 @@ from typing import TYPE_CHECKING
 import numpy as np
 import pandas as pd
 
+from . import segmentation
+from .core.disciplines import DISCIPLINES
 from .core.vilpellet.config import DEFAULT_VILPELLET_CONFIG_PATH
 from .fingerprint import file_identity
 
@@ -27,6 +29,17 @@ EDGE_COLUMNS = [f"{axis}{end}" for end in (0, 1) for axis in ("x", "y", "z", "ut
 CLIMB_VERSION = 1
 
 
+def climbs_path(index_path: Path, source: str) -> Path:
+    """The file holding one segmentation's climb products, beside the census.
+
+    Vilpellet's keeps the name of the data folders already prepared; every other
+    segmentation has a file of its own, so that preparing it never touches that one.
+    """
+    return index_path.with_name(
+        segmentation.product_name("thermal-climbs.sqlite3", source)
+    )
+
+
 def segmentation_signature(index: ThermalIndex, source: str) -> str:
     """Identify climb products by census, code version and segmentation config.
 
@@ -37,9 +50,18 @@ def segmentation_signature(index: ThermalIndex, source: str) -> str:
     census = index.signature if index.signature else file_identity(index.path)
     config = Path(DEFAULT_VILPELLET_CONFIG_PATH)
     settings = file_identity(config) if config.is_file() else "missing"
-    return hashlib.sha256(
-        json.dumps([CLIMB_VERSION, census, source, settings]).encode()
-    ).hexdigest()
+    parts = [CLIMB_VERSION, census, source, settings]
+    if source != segmentation.VILPELLET.key:
+        # Saved runs, not the Vilpellet configuration, define these climbs.
+        for name in index.disciplines:
+            discipline = DISCIPLINES[name]
+            runs = segmentation.paths(discipline, source)["runs"]
+            parts.append(
+                file_identity(runs, discipline.config().data_root)
+                if runs.is_file()
+                else "missing"
+            )
+    return hashlib.sha256(json.dumps(parts).encode()).hexdigest()
 
 
 class ClimbCache:
@@ -47,7 +69,7 @@ class ClimbCache:
 
     def __init__(self, index: ThermalIndex, source: str):
         """Open persistent products next to the archive's saved cell index."""
-        self.path = index.path.with_name("thermal-climbs.sqlite3")
+        self.path = climbs_path(index.path, source)
         self.key = segmentation_signature(index, source)
         self.db = sqlite3.connect(self.path, timeout=30)
         self.db.execute("""

@@ -7,11 +7,14 @@ reads into ``<destination>/paragliders`` and ``<destination>/hang_gliders``:
 
 * the ``.igc`` tracks, the catalog and the cleaned tables (``fixes.parquet``,
   ``flights_meta.parquet``);
-* the saved Vilpellet runs, coverage and parameters;
+* the saved Vilpellet runs, coverage and parameters, and those of the refit of his
+  model on the FFVL flights when the archive holds them;
 * every saved viewer product under ``derived/viewer`` (census, route index, thermal
   planes, density rasters, terrain and imagery caches).
 
-The climb cache keeps only its current Vilpellet rows. Saved products then receive
+The climb cache keeps only its current Vilpellet rows; the climb cache of another
+segmentation is not copied, since its thermal-plane snapshot holds those climbs. Saved
+products then receive
 the portable fingerprints of this repository (see ``xc_viewer.fingerprint``),
 so the destination opens on any computer without preparing anything again.
 
@@ -46,7 +49,7 @@ from pathlib import Path
 
 import numpy as np
 
-from xc_viewer import datafolder
+from xc_viewer import datafolder, segmentation
 from xc_viewer.core.disciplines import DISCIPLINES, HANG_GLIDERS, PARAGLIDERS
 from xc_viewer.sqlite import connect
 
@@ -58,11 +61,20 @@ INPUTS = (
     "derived/segmentation/vilpellet/phase_segments.parquet",
     "derived/segmentation/vilpellet/phase_coverage.parquet",
     "derived/segmentation/vilpellet/model/parameters.json",
+    # The refit is optional: a root without it packs as before.
+    "derived/segmentation/refit/phase_segments.parquet",
+    "derived/segmentation/refit/phase_coverage.parquet",
+    "derived/segmentation/refit/model/parameters.json",
+    "derived/segmentation/refit/PARAMETERS.md",
 )
 VIEWER = "derived/viewer"
 #: Where the saved products sit inside the first discipline's root.
 PRODUCTS = "derived/viewer/thermal-planes"
 CLIMBS = "thermal-climbs.sqlite3"
+#: The climb caches of every segmentation, Vilpellet's included.
+CLIMB_CACHES = tuple(
+    segmentation.product_name(CLIMBS, key) for key in segmentation.SEGMENTATIONS
+)
 #: Saved products the viewer no longer reads: older store versions and the Gaussian
 #: HMM rasters.
 UNUSED = ("archive", "route-thermal-duration.npz", "thermal-regions.npz")
@@ -118,7 +130,7 @@ def _plan(source: Path, target: Path) -> list[tuple[Path, Path]]:
             parts = path.relative_to(viewer).parts
             if (
                 path.is_file()
-                and path.name != CLIMBS
+                and path.name not in CLIMB_CACHES
                 and not any(part in UNUSED for part in parts)
                 and not any(part.startswith(".") for part in parts)
                 and path.suffix not in (".lock", ".copying")
@@ -504,11 +516,43 @@ def main() -> int:
         k: "ready" if k in current else ("stale" if stored.get(k) else "absent")
         for k in new
     }
+    # Which saved segmentations each discipline holds (the viewer's Phases menu).
+    segmentations = {
+        key: [
+            d.name
+            for d in DISCIPLINES.values()
+            if (destination / d.folder / f"derived/segmentation/{key}").is_dir()
+            and (
+                destination
+                / d.folder
+                / f"derived/segmentation/{key}"
+                / "phase_segments.parquet"
+            ).is_file()
+        ]
+        for key in ("vilpellet", "refit")
+    }
+    # The thermal products each segmentation has of its own (Thermal planes, Thermal
+    # density, Routes), named as the viewer looks for them.
+    owned = {
+        key: [
+            name
+            for name in (
+                segmentation.product_name("thermal-planes.sqlite3", key),
+                f"thermal-{key}-activity.sqlite3",
+                segmentation.product_name("thermal-duration.npz", key),
+                f"route-thermal-duration-{key}.npz",
+            )
+            if (products / name).is_file()
+        ]
+        for key in segmentation.SEGMENTATIONS
+    }
     manifest = {
         "created": datetime.now(UTC).isoformat(timespec="seconds"),
         "sources": {name: str(root) for name, root in roots.items()},
         "checked_against_thesis": probe is not None,
         "products": report,
+        "segmentations": segmentations,
+        "segmentation_products": owned,
     }
     (destination / "manifest.json").write_text(
         json.dumps(manifest, indent=2), encoding="utf-8"

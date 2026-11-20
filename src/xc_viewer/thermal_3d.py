@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
+from . import segmentation
 from .thermal_daily import height_levels, in_windows
 from .thermal_geometry import CELL_M, ThermalCell
 from .thermal_ground import cell_ground, mean_terrain, terrain_reference
@@ -52,9 +53,9 @@ def area_bounds(cell, area_km):
 
 
 def cell_label(store, cell):
-    """Validate the selected saved cell and identify its Vilpellet category rank."""
+    """Validate the selected saved cell and identify its category rank."""
     if not store.has_climb_ranking:
-        raise ValueError("The 3D view requires the Vilpellet climb-ranked snapshot")
+        raise ValueError("The 3D view requires the climb-ranked snapshot")
     cells = sorted(
         (c for c in store.cells() if c.terrain == cell.terrain),
         key=lambda c: (-store.activity_counts[c.ix, c.iy]["climb_runs"], c.ix, c.iy),
@@ -224,7 +225,7 @@ def points_every_20m(frame, cell, start, end, *, area_km=5, windows=None):
 
 def read_neighbour_points(store, cell, start, end, check_cancel, progress):
     """Read only true 20 m levels, retaining the centre's planes and flight IDs."""
-    flights = store.neighbour_flights(cell, "vilpellet")
+    flights = store.neighbour_flights(cell, segmentation.current().key)
     if flights is None:
         raise ValueError(
             "The data folder has no prepared neighbouring cells. "
@@ -238,7 +239,7 @@ def read_neighbour_points(store, cell, start, end, check_cancel, progress):
             continue
         check_cancel()
         progress(f"Reading neighbouring intersections at {height:g} m…")
-        frame = store.neighbour_points(cell, "vilpellet", level)
+        frame = store.neighbour_points(cell, segmentation.current().key, level)
         frame = frame.loc[
             frame.utc.between(start, end)
             & frame.x.between(west, east, inclusive="left")
@@ -322,7 +323,7 @@ def load_scene(
     progress=lambda _: None,
     cancel=None,
 ):
-    """Load the selected saved cell, Vilpellet and the requested UTC interval.
+    """Load the selected saved cell, the segmentation in use and the UTC interval.
 
     ``windows`` optionally keeps only the daily hour windows inside it.
     """
@@ -356,9 +357,10 @@ def load_scene(
     except (OSError, ValueError) as exc:
         aerial_error = str(exc)
     check_cancel()
-    progress("Reading saved Vilpellet intersections for the selected dates…")
+    seg = segmentation.current()
+    progress(f"Reading saved {seg.label} intersections for the selected dates…")
     plane = store.read_plane(
-        cell, start, end, "vilpellet", progress=progress, cancel=cancel
+        cell, start, end, seg.key, progress=progress, cancel=cancel
     )
     check_cancel()
     frame = plane.points

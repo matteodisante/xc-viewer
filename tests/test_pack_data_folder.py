@@ -26,8 +26,8 @@ def _clean_env(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
-def _thesis_archive(root):
-    """The thesis layout: tracks, tables, Vilpellet products and viewer products."""
+def _thesis_archive(root, *, refit=True):
+    """The thesis layout: tracks, tables, saved phases and viewer products."""
     track = root / "raw/igc/2020-2021/2021-05-01_1.igc"
     track.parent.mkdir(parents=True)
     track.write_text("AXXX\n")
@@ -43,6 +43,13 @@ def _thesis_archive(root):
     pd.DataFrame({"flight_id": ["1"]}).to_parquet(vilpellet / "phase_segments.parquet")
     pd.DataFrame({"flight_id": ["1"]}).to_parquet(vilpellet / "phase_coverage.parquet")
     (vilpellet / "model/parameters.json").write_text("{}")
+    if refit:
+        saved = derived / "segmentation/refit"
+        (saved / "model").mkdir(parents=True)
+        pd.DataFrame({"flight_id": ["1"]}).to_parquet(saved / "phase_segments.parquet")
+        pd.DataFrame({"flight_id": ["1"]}).to_parquet(saved / "phase_coverage.parquet")
+        (saved / "model/parameters.json").write_text("{}")
+        (saved / "PARAMETERS.md").write_text("# Refit\n")
     products = derived / "viewer/thermal-planes"
     products.mkdir(parents=True)
     with connect(products / "thermal-cells.sqlite3") as db:
@@ -81,6 +88,15 @@ def _thesis_archive(root):
         metadata=metadata,
         version=np.array(1),
     )
+    if refit:
+        # Its products are named after it; its climb cache is a rebuildable cache.
+        for name in (
+            "thermal-planes-refit.sqlite3",
+            "thermal-refit-activity.sqlite3",
+            "thermal-climbs-refit.sqlite3",
+            "route-thermal-duration-refit.npz",
+        ):
+            (products / name).write_bytes(b"refit")
     (products / ".prepare.lock").write_text("")
     return root
 
@@ -100,8 +116,15 @@ def test_pack_copies_reads_only_and_restamps_for_another_computer(
     root = destination / "paragliders"
     assert (root / "raw/igc/2020-2021/2021-05-01_1.igc").is_file()
     assert not (root / "raw/raw_xml").exists()
+    refit = root / "derived/segmentation/refit"
+    assert (refit / "phase_segments.parquet").is_file()
+    assert (refit / "model/parameters.json").is_file()
+    assert (refit / "PARAMETERS.md").is_file()
     products = root / "derived/viewer/thermal-planes"
     assert not (products / ".prepare.lock").exists()
+    assert (products / "thermal-planes-refit.sqlite3").read_bytes() == b"refit"
+    assert (products / "thermal-refit-activity.sqlite3").is_file()
+    assert not (products / "thermal-climbs-refit.sqlite3").exists()
 
     # The viewer accepts the copied census and route index without preparing them.
     assert thermal_index.load_saved_index([PARAGLIDERS]) is not None
@@ -120,12 +143,25 @@ def test_pack_copies_reads_only_and_restamps_for_another_computer(
     assert density != "old-density"
     manifest = json.loads((destination / "manifest.json").read_text())
     assert manifest["products"]["census"] == "ready"
+    assert manifest["segmentations"] == {
+        "vilpellet": ["paragliders"],
+        "refit": ["paragliders"],
+    }
+    assert manifest["segmentation_products"]["refit"] == [
+        "thermal-planes-refit.sqlite3",
+        "thermal-refit-activity.sqlite3",
+        "route-thermal-duration-refit.npz",
+    ]
+    assert manifest["segmentation_products"]["vilpellet"] == [
+        "thermal-planes.sqlite3",
+        "route-thermal-duration-vilpellet.npz",
+    ]
 
 
 def test_pack_links_tracks_from_an_identical_copy(tmp_path, monkeypatch):
     import shutil
 
-    source = _thesis_archive(tmp_path / "ssd/paragliders/ffvl_cfd_igc")
+    source = _thesis_archive(tmp_path / "ssd/paragliders/ffvl_cfd_igc", refit=False)
     copy = tmp_path / "other/paragliders/ffvl_cfd_igc"
     shutil.copytree(source / "raw", copy / "raw")
     shutil.copytree(source / "catalog", copy / "catalog")
@@ -138,6 +174,8 @@ def test_pack_links_tracks_from_an_identical_copy(tmp_path, monkeypatch):
         runpy.run_path(str(SCRIPT), run_name="__main__")
     track = "raw/igc/2020-2021/2021-05-01_1.igc"
     assert (destination / "paragliders" / track).samefile(copy / track)
+    # An archive without the refit packs without it.
+    assert not (destination / "paragliders/derived/segmentation/refit").exists()
     # A differing file is copied from the archive, never linked.
     catalog = destination / "paragliders/catalog/catalog.csv"
     assert catalog.read_bytes() == (source / "catalog/catalog.csv").read_bytes()

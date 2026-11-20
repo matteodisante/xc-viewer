@@ -435,3 +435,207 @@ def test_3d_native_fullscreen_and_map_toggle_are_independent(qapp):
         assert dialog._heading.isVisible() and dialog._point_size.isVisible()
     finally:
         dialog.close()
+
+
+def _two_segmentations(window):
+    """Give the window one kept flight labelled by both segmentations."""
+    from xc_viewer import data
+
+    t = np.arange(60, dtype=float)
+    fixes = pd.DataFrame(
+        {"segment_id": 0, "t": t, "E": t * 5.0, "N": np.sin(t / 5) * 50, "z": t}
+    )
+
+    def runs(*spans):
+        return pd.DataFrame(spans, columns=["phase", "t_start", "t_end"])
+
+    vilpellet = data.label_from_runs(fixes, runs(("climb", 0, 29), ("search", 30, 59)))
+    refit = data.label_from_runs(fixes, runs(("climb", 0, 19), ("search", 20, 39)))
+    window._raw = None
+    window._cleaned = SimpleNamespace(kept=True, fixes=fixes)
+    window._frame = object()
+    window._tracks = {
+        "vilpellet": data.PhaseTrack(vilpellet, "vilpellet-fitted-2019"),
+        "refit": data.PhaseTrack(refit, "refit-2026"),
+    }
+    window._select_phases()
+    window._controls._frame_combo.setCurrentIndex(1)  # ENU: no frame conversion
+    return window
+
+
+@pytest.fixture
+def default_segmentation():
+    from xc_viewer import segmentation
+
+    segmentation.use(segmentation.DEFAULT)
+    yield segmentation
+    segmentation.use(segmentation.DEFAULT)
+
+
+def test_compare_mode_draws_both_ribbons_marks_differences_and_reports_agreement(
+    window, default_segmentation
+):
+    _two_segmentations(window)
+    controls = window._controls
+    controls._color_combo.setCurrentIndex(controls._color_combo.findData("compare"))
+
+    assert len(window._figure.axes) == 2
+    main, ribbons = window._figure.axes
+    marks = [c for c in main.collections if c.get_label() == "phases differ"]
+    # 20 fixes differ: t 20..29 (climb vs search) and t 40..59 are not both labelled.
+    assert len(marks) == 1 and len(marks[0].get_offsets()) == 10
+    assert len(ribbons.collections) >= 5
+    # Bottom to top: the difference row, then Refit, then Vilpellet on top.
+    assert [t.get_text() for t in ribbons.get_yticklabels()] == [
+        "differ",
+        "Refit",
+        "Vilpellet",
+    ]
+    text = controls._agreement.text()
+    assert controls._agreement.isVisibleTo(window)
+    # Both label t 0..39; they agree on t 0..19 and 30..39: 30 of 40 fixes.
+    assert "75.0%" in text and "40 of 60" in text
+    assert "Vilpellet only: 20" in text
+
+    controls._color_combo.setCurrentIndex(controls._color_combo.findData("phase"))
+    assert len(window._figure.axes) == 1
+    assert not controls._agreement.isVisibleTo(window)
+
+
+def test_compare_mode_without_a_second_segmentation_says_so(
+    window, default_segmentation
+):
+    _two_segmentations(window)
+    window._tracks["refit"] = None
+    controls = window._controls
+    controls._color_combo.setCurrentIndex(controls._color_combo.findData("compare"))
+    assert not window._has_3d_data
+    texts = [t.get_text() for t in window._figure.axes[0].texts]
+    assert any("needs both segmentations" in t for t in texts)
+
+
+def _side_by_side(window):
+    _two_segmentations(window)
+    controls = window._controls
+    controls._color_combo.setCurrentIndex(controls._color_combo.findData("side"))
+    return controls
+
+
+def test_side_by_side_draws_each_segmentation_in_its_panel(
+    window, default_segmentation
+):
+    controls = _side_by_side(window)
+
+    assert len(window._figure.axes) == 2
+    left, right = window._figure.axes
+    assert (left.get_title(), right.get_title()) == ("Vilpellet", "Refit")
+    # Vilpellet labels two phases; the refit leaves t 40..59 unclassified.
+    assert [len(a.lines) for a in (left, right)] == [2, 3]
+    assert left.get_legend() is None and right.get_legend() is None
+    (legend,) = window._figure.legends
+    assert [t.get_text() for t in legend.get_texts()] == [
+        "climb",
+        "search",
+        "unclassified",
+    ]
+    assert "75.0%" in controls._agreement.text()
+    assert controls._agreement.isVisibleTo(window)
+
+    controls._color_combo.setCurrentIndex(controls._color_combo.findData("phase"))
+    assert len(window._figure.axes) == 1
+    assert not controls._agreement.isVisibleTo(window)
+
+
+def test_side_by_side_panels_share_zoom_and_pan(window, default_segmentation):
+    _side_by_side(window)
+    left, right = window._figure.axes
+    left.set_xlim(10, 50)
+    right.set_ylim(-5, 5)
+    assert right.get_xlim() == (10, 50)
+    assert left.get_ylim() == (-5, 5)
+
+    # The zoom survives a change of colouring and a return to the same mode.
+    window._controls._chk_dms.setChecked(True)
+    assert window._figure.axes[0].get_xlim() == (10, 50)
+
+
+def test_side_by_side_3d_links_limits_and_view(window, default_segmentation):
+    _two_segmentations(window)
+    controls = window._controls
+    controls._chk_3d.setChecked(True)
+    controls._color_combo.setCurrentIndex(controls._color_combo.findData("side"))
+
+    left, right = window._figure.axes
+    assert window._has_3d_data
+    left.set_xlim(0, 100)
+    left.set_zlim(0, 30)
+    assert right.get_xlim() == (0, 100) and right.get_zlim() == (0, 30)
+    controls._slider_azim.setValue(20)
+    controls._slider_elev.setValue(45)
+    assert (right.azim, right.elev) == (20, 45)
+
+
+def test_side_by_side_without_a_second_segmentation_says_so(
+    window, default_segmentation
+):
+    _two_segmentations(window)
+    window._tracks["refit"] = None
+    controls = window._controls
+    controls._color_combo.setCurrentIndex(controls._color_combo.findData("side"))
+    assert not window._has_3d_data
+    left, right = window._figure.axes
+    assert any("needs both segmentations" in t.get_text() for t in left.texts)
+    assert not right.axison
+    assert not controls._agreement.isVisibleTo(window)
+
+
+def test_segmentation_switch_changes_the_phases_every_tab_reads(
+    window, default_segmentation, monkeypatch
+):
+    _two_segmentations(window)
+    saved = {}
+
+    class Settings:
+        def setValue(self, key, value):  # noqa: N802
+            saved[key] = value
+
+    monkeypatch.setattr("PyQt6.QtCore.QSettings", Settings)
+    invalidated = []
+    for name in ("_thermal_plane", "_thermal_density", "_route_comparison"):
+        monkeypatch.setattr(
+            getattr(window, name), "invalidate", lambda n=name: invalidated.append(n)
+        )
+    assert window._phases is window._tracks["vilpellet"]
+    assert window._figure.axes[0].get_title().startswith("Vilpellet segmentation")
+
+    combo = window._segmentation_combo
+    combo.setCurrentIndex(combo.findData("refit"))
+
+    assert default_segmentation.current().key == "refit"
+    assert saved == {default_segmentation.SETTINGS_KEY: "refit"}
+    assert window._phases is window._tracks["refit"]
+    assert sorted(invalidated) == [
+        "_route_comparison",
+        "_thermal_density",
+        "_thermal_plane",
+    ]
+    assert window._figure.axes[0].get_title().startswith("Refit segmentation")
+
+
+def test_every_tab_still_opens_when_the_refit_folder_is_missing(
+    window, default_segmentation, tmp_path, monkeypatch
+):
+    from xc_viewer.core.disciplines import DATA_FOLDER_ENV, DISCIPLINES
+
+    (tmp_path / "paragliders/derived").mkdir(parents=True)
+    monkeypatch.setenv(DATA_FOLDER_ENV, str(tmp_path))
+    for discipline in DISCIPLINES.values():
+        monkeypatch.delenv(discipline.env, raising=False)
+    monkeypatch.setattr(
+        "PyQt6.QtCore.QSettings", lambda: SimpleNamespace(setValue=lambda *_: None)
+    )
+    combo = window._segmentation_combo
+    combo.setCurrentIndex(combo.findData("refit"))
+    for index in range(window._tabs.count()):
+        window._tabs.setCurrentIndex(index)
+    assert "Refit" in window._segmentation_combo.currentText()
