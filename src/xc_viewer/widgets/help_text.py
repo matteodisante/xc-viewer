@@ -131,7 +131,9 @@ def trajectory_howto() -> str:
 <li><b>Search the catalogue:</b> choose the <b>Discipline</b>, fill in any filters,
 then click <b>Search catalog</b>. A filter must match a whole value: type it, or pick
 it from its list; capitals do not matter and empty filters are ignored. Double-click a
-row in the results to open that flight.</li>
+row in the results to open that flight. <b>Sampling</b> keeps the flights logged
+every 1, 2, 5, &hellip; seconds, as recorded by the pipeline; the results show it in
+the <i>Sampling (s)</i> column.</li>
 <li><b>Browse .igc file&hellip;</b> opens any IGC file, also one outside the data
 folder. For such a file, select its discipline first: the cleaning uses
 different speed limits for paragliders and hang gliders.</li>

@@ -382,3 +382,46 @@ def test_pipeline_status_distinguishes_missing_results_from_rejection(discipline
         "No archived result",
     ]
     assert result.loc[1, "drop_reason"] == "duration_below_minimum"
+
+
+def test_filter_by_sampling_interval_and_its_values(discipline):
+    rows = [
+        {
+            "flight_id": "1",
+            "lat0": 45.3,
+            "lon0": 5.9,
+            "alt0": 980.0,
+            "drop_reason": None,
+            "dt_native_s": 5.0,
+        },
+        {
+            "flight_id": "2",
+            "lat0": 45.4,
+            "lon0": 6.1,
+            "alt0": 1010.0,
+            "drop_reason": None,
+            "dt_native_s": 1.0,
+        },
+        {
+            "flight_id": "3",
+            "lat0": 45.5,
+            "lon0": 6.2,
+            "alt0": 900.0,
+            "drop_reason": None,
+            "dt_native_s": None,
+        },
+    ]
+    pd.DataFrame(rows).to_parquet(
+        discipline.config().derived_dir / "flights_meta.parquet"
+    )
+    result = catalog_index.filter_flights(discipline, sampling_s=5)
+    assert result["flight_id"].tolist() == ["1"]
+    assert catalog_index.sampling_values(discipline) == [1, 5]
+
+
+def test_sampling_filter_matches_nothing_without_the_column(discipline):
+    pd.DataFrame(_FLIGHTS_META_ROWS).to_parquet(
+        discipline.config().derived_dir / "flights_meta.parquet"
+    )
+    assert catalog_index.filter_flights(discipline, sampling_s=5).empty
+    assert catalog_index.sampling_values(discipline) == []

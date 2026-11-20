@@ -12,6 +12,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+import pyarrow.parquet as pq
 
 from . import geography
 from .core.disciplines import Discipline
@@ -64,6 +65,12 @@ def _load_catalog(discipline: Discipline) -> pd.DataFrame:
     return _catalog_cache[discipline.name]
 
 
+def _present(path: Path, columns: list[str]) -> list[str]:
+    """The ``columns`` the parquet file at ``path`` actually has."""
+    names = set(pq.read_schema(path).names)
+    return [c for c in columns if c in names]
+
+
 def _load_flights_meta(discipline: Discipline) -> pd.DataFrame | None:
     """Per-flight pipeline verdict plus the region/terrain labels.
 
@@ -78,14 +85,24 @@ def _load_flights_meta(discipline: Discipline) -> pd.DataFrame | None:
         else:
             meta = pd.read_parquet(
                 derived / "flights_meta.parquet",
-                columns=["flight_id", "lat0", "lon0", "alt0", "drop_reason"],
+                columns=["flight_id", "lat0", "lon0", "alt0", "drop_reason"]
+                + _present(derived / "flights_meta.parquet", ["dt_native_s"]),
             )
+            if "dt_native_s" not in meta:
+                meta["dt_native_s"] = float("nan")
             meta = meta.drop_duplicates(subset="flight_id", keep="last")
             meta["kept"] = meta["drop_reason"].isna()
             meta["region"] = geography.classify_region(meta["lat0"], meta["lon0"])
             meta["terrain"] = geography.classify_terrain(meta["alt0"])
             _flights_meta_cache[discipline.name] = meta[
-                ["flight_id", "kept", "drop_reason", "region", "terrain"]
+                [
+                    "flight_id",
+                    "kept",
+                    "drop_reason",
+                    "region",
+                    "terrain",
+                    "dt_native_s",
+                ]
             ]
     return _flights_meta_cache[discipline.name]
 
@@ -120,6 +137,7 @@ def filter_flights(
     pilot: str | None = None,
     region: str | None = None,
     terrain: str | None = None,
+    sampling_s: int | None = None,
     kept_only: bool = False,
 ) -> pd.DataFrame:
     """Catalog rows matching every given filter, joined against the pipeline's verdict.
@@ -156,6 +174,9 @@ def filter_flights(
         terrain: One of :data:`xc_viewer.geography.TERRAIN_ORDER` (``"Plains"``,
             ``"Hills"``, ``"Low mountains"``, ``"High mountains"``): keep only
             take-offs in that elevation band.
+        sampling_s: Native sampling interval in whole seconds, from
+            ``flights_meta.parquet``'s ``dt_native_s`` rounded to the second; a flight
+            without a recorded interval fails to match.
         kept_only: If ``True``, keep only flights the pipeline retained (a flight not
             found in ``flights_meta.parquet`` -- never processed -- is excluded too).
 
@@ -211,7 +232,22 @@ def filter_flights(
         result = result[result["region"] == region]
     if terrain is not None:
         result = result[result["terrain"] == terrain]
+    if sampling_s is not None:
+        if "dt_native_s" not in result:
+            return result.iloc[0:0].reset_index(drop=True)
+        result = result[result["dt_native_s"].round() == sampling_s]
     return result.reset_index(drop=True)
+
+
+def sampling_values(discipline: Discipline) -> list[int]:
+    """Sorted native sampling intervals (whole seconds) present in the pipeline results.
+
+    Empty when ``flights_meta.parquet`` is unreachable.
+    """
+    meta = _load_flights_meta(discipline)
+    if meta is None:
+        return []
+    return sorted(meta["dt_native_s"].dropna().round().astype(int).unique().tolist())
 
 
 def catalog_rows(discipline: Discipline, flight_ids) -> pd.DataFrame:

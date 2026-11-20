@@ -202,13 +202,13 @@ def test_all_catalog_matches_are_selectable_and_verdicts_are_explicit(
     model = picker._results.model()
     assert model.rowCount() == len(rows)
     assert isinstance(rows.iloc[0]["kept"], np.bool_)
-    assert [model.data(model.index(i, 6)) for i in range(3)] == [
+    assert [model.data(model.index(i, 7)) for i in range(3)] == [
         "Kept",
         "Dropped",
         "No archived result",
     ]
     assert "altitude unavailable" in model.data(
-        model.index(1, 6), Qt.ItemDataRole.ToolTipRole
+        model.index(1, 7), Qt.ItemDataRole.ToolTipRole
     )
     received = []
     picker.flight_chosen.connect(lambda *args: received.append(args))

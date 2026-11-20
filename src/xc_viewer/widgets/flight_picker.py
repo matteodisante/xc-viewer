@@ -58,6 +58,7 @@ _RESULT_COLUMNS = [
     "takeoff",
     "flight_type",
     "wing_class",
+    "dt_native_s",
     "kept",
 ]
 _RESULT_HEADERS = [
@@ -67,6 +68,7 @@ _RESULT_HEADERS = [
     "Takeoff",
     "Type",
     "Wing class",
+    "Sampling (s)",
     "Pipeline status",
 ]
 # A folder can hold the entire archive (186,052 .igc files for paragliders per
@@ -138,6 +140,8 @@ class FlightResultsModel(QAbstractTableModel):
             if role == Qt.ItemDataRole.ToolTipRole and not bool(value):
                 return f"Dropped: {row.get('drop_reason', 'see pipeline result')}"
             return "Kept" if bool(value) else "Dropped"
+        if key == "dt_native_s":
+            return "" if pd.isna(value) else f"{value:g}"
         return "" if pd.isna(value) else str(value)
 
 
@@ -220,6 +224,10 @@ class FlightPicker(QWidget):
         self._terrain_combo.addItem("(any)", None)
         for name in geography.TERRAIN_ORDER:
             self._terrain_combo.addItem(name, name)
+        # Filled with the intervals the pipeline results contain, see
+        # _repopulate_filter_combos().
+        self._sampling_combo = QComboBox()
+        self._sampling_combo.addItem("(any)", None)
         self._kept_only_check = QCheckBox("Kept by pipeline only")
         self._btn_search = QPushButton("Search catalog")
         self._btn_search.setProperty("emphasis", "primary")
@@ -238,6 +246,7 @@ class FlightPicker(QWidget):
                 # Grouped with the site name they refine (pipeline-derived, unlike it).
                 filter_form.addRow("Region", self._region_combo)
                 filter_form.addRow("Terrain", self._terrain_combo)
+        filter_form.addRow("Sampling", self._sampling_combo)
         filter_form.addRow(self._kept_only_check)
         filter_box = QGroupBox("Filter the catalog")
         filter_box.setToolTip("Catalog metadata comes from the FFVL and can be wrong.")
@@ -262,7 +271,8 @@ class FlightPicker(QWidget):
             header.setSectionResizeMode(QHeaderView.ResizeMode.Interactive)
             self._results.setColumnWidth(0, 100)
             self._results.setColumnWidth(1, 100)
-            self._results.setColumnWidth(6, 170)
+            self._results.setColumnWidth(6, 90)
+            self._results.setColumnWidth(7, 170)
         self._results.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
         self._results.setSelectionBehavior(
             QAbstractItemView.SelectionBehavior.SelectRows
@@ -387,6 +397,13 @@ class FlightPicker(QWidget):
                 combo.addItems(values)
                 combo.setCurrentText(current)
                 combo.blockSignals(False)
+            chosen = self._sampling_combo.currentData()
+            self._sampling_combo.clear()
+            self._sampling_combo.addItem("(any)", None)
+            for seconds in catalog_index.sampling_values(discipline):
+                self._sampling_combo.addItem(f"{seconds} s", seconds)
+            index = self._sampling_combo.findData(chosen)
+            self._sampling_combo.setCurrentIndex(max(index, 0))
         except FileNotFoundError as exc:
             self.set_status(str(exc))
             return
@@ -480,6 +497,7 @@ class FlightPicker(QWidget):
                 month=self._month_combo.currentData(),
                 region=self._region_combo.currentData(),
                 terrain=self._terrain_combo.currentData(),
+                sampling_s=self._sampling_combo.currentData(),
                 kept_only=self._kept_only_check.isChecked(),
                 **text_values,
             )
