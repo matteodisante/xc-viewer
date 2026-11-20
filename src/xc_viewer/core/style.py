@@ -55,12 +55,12 @@ REGION_COLORS = {
 }
 
 # Flight phase. Three states shown together in a strip, a posterior panel and a
-# plan view, so they need separation at thin line widths: teal, plum and green
-# differ in hue and in lightness.
+# plan view, so they need separation at thin line widths: blue, amber and red stay
+# apart for normal vision and for the common forms of colour blindness.
 PHASE_COLORS = {
-    "transition": "#2E7D8A",  # teal
-    "search": "#A9629E",  # plum
-    "climb": "#4E8A5B",  # green
+    "transition": "#0072B2",  # blue
+    "search": "#E69F00",  # amber
+    "climb": "#C0392B",  # red
 }
 UNCLASSIFIED_COLOR = "#9E9E9E"
 
